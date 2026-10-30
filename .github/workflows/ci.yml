@@ -1,4 +1,4 @@
-# Build and test every supported platform. Releases are release.yml, from fork-v* tags.
+# Build and test every supported platform. Releases are release.yml, from vsh-v* tags.
 #
 # Rust caches use one pinned toolchain and only downstream pushes save, so PR
 # caches can't evict the ones everybody restores. setup-zig caches separately.
@@ -34,7 +34,7 @@ jobs:
         include:
           # Match release's glibc floor and native platform runners.
           - { platform: linux-x86_64, runner: ubuntu-22.04 }
-          - { platform: macos-aarch64, runner: macos-15 }
+          - { platform: macos-aarch64, runner: macos-26 }
           - { platform: windows-x86_64, runner: windows-2022 }
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 45

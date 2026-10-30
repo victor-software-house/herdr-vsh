@@ -1,7 +1,7 @@
 #!/bin/bash
-# The fork's macOS download: Herdr Fork.app, signed, notarized and stapled, in a zip.
-# Built without HERDR_APP_RELEASE: no upstream updates, telemetry or feedback.
-# Its own bundle id and app id let it sit beside an installed Herdr.
+# Herdr VSH's macOS download: Herdr VSH.app, signed, notarized and stapled, in a zip.
+# Built without HERDR_APP_RELEASE: no Herdr updates, telemetry or feedback.
+# The binary keeps its own home and core session (src/mods.rs APP_ID).
 # Needs the APPLE_CERTIFICATE_* (scripts/mac-sign) and APPLE_API_* secrets.
 set -euo pipefail
 
@@ -11,33 +11,32 @@ out=${1:?usage: fork-release-macos output.zip}
 : "${APPLE_API_ISSUER:?missing notary API issuer}"
 version=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)
 
-cargo build --release --locked
+cargo build --release --locked --bin herdr-vsh
 
 umask 077
 work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
-app="$work/Herdr Fork.app"
+app="$work/Herdr VSH.app"
 mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources"
-cp target/release/herdr-app "$app/Contents/MacOS/Herdr"
+cp target/release/herdr-vsh "$app/Contents/MacOS/herdr-vsh"
 cp assets/icons/Herdr.icns "$app/Contents/Resources/Herdr.icns"
 cp LICENSE THIRD-PARTY-NOTICES "$app/Contents/Resources/"
 cat > "$app/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0"><dict>
-    <key>CFBundleExecutable</key><string>Herdr</string>
-    <key>CFBundleIdentifier</key><string>dev.herdr.app.fork</string>
-    <key>CFBundleName</key><string>Herdr Fork</string>
-    <key>CFBundleDisplayName</key><string>Herdr Fork</string>
+    <key>CFBundleExecutable</key><string>herdr-vsh</string>
+    <key>CFBundleIdentifier</key><string>com.victor-software-house.herdr</string>
+    <key>CFBundleName</key><string>Herdr VSH</string>
+    <key>CFBundleDisplayName</key><string>Herdr VSH</string>
     <key>CFBundleIconFile</key><string>Herdr</string>
     <key>CFBundlePackageType</key><string>APPL</string>
     <key>CFBundleShortVersionString</key><string>$version</string>
     <key>CFBundleVersion</key><string>$version</string>
+    <key>LSMinimumSystemVersion</key><string>26.0</string>
     <key>NSPrincipalClass</key><string>NSApplication</string>
     <key>NSHighResolutionCapable</key><true/>
-    <key>LSEnvironment</key><dict>
-        <key>HERDR_APP_ID</key><string>herdr-app-fork</string>
-    </dict></dict></plist>
+</dict></plist>
 PLIST
 scripts/mac-sign "$app"
 

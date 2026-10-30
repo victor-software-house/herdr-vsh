@@ -129,6 +129,32 @@ patches:
     scope:
       - src/terminal.rs
       - src/vt.rs
+  - name: fork-identity
+    kind: source
+    purpose: "Run beside Herdr without sharing anything: the fork has its own home, window app id and herdr-core session by default."
+    upstream_status: not-submitted
+    drop_when: The fork stops shipping as a separate app beside Herdr.
+    scope:
+      - src/mods.rs
+      - src/main.rs
+      - src/setup.rs
+      - src/SKILL.md
+      - src/window.rs
+      - docs/security.md
+      - docs/mods.md
+      - defaults/AGENTS.md
+      - defaults/herdr.d.ts
+      - defaults/frame/welcome/main.js
+      - README.md
+      - Cargo.toml
+      - tests/commands.rs
+      - tests/skill.rs
+      - src/control.rs
+      - src/core_bin/cli_link.rs
+      - THIRD-PARTY-NOTICES
+      - scripts/docs.ts
+      - scripts/docs.test.ts
+      - docs/commands.md
   - name: fork-ci
     kind: tooling
     purpose: "Run only the fork's own CI: the upstream test workflow on pushes to downstream and pull requests, on standard GitHub-hosted runners, with no release publishing."
@@ -139,11 +165,11 @@ patches:
   - name: fork-release
     kind: tooling
     purpose: >-
-      Publish a signed, notarized macOS build of the fork to GitHub Releases from a
-      fork-v* tag, without upstream updates, telemetry or feedback.
+      Publish a signed, notarized macOS build of Herdr VSH to GitHub Releases from a
+      vsh-v* tag, without upstream updates, telemetry or feedback.
     upstream_status: not-submitted
     drop_when: >-
-      The fork stops shipping its own builds, or the rebranded app takes over
+      Herdr VSH stops shipping its own builds, or the rebranded app takes over
       releases.
     scope:
       - .github/workflows/release.yml

@@ -7,7 +7,7 @@ fn commands_need_no_window_or_app_home() {
         std::process::id(),
         std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos(),
     ));
-    let output = Command::new(env!("CARGO_BIN_EXE_herdr-app"))
+    let output = Command::new(env!("CARGO_BIN_EXE_herdr-vsh"))
         .arg("commands")
         .env("HERDR_APP_HOME", &home)
         .output()

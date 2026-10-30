@@ -1,3 +1,39 @@
+# Herdr VSH
+
+Herdr VSH is a build of [Herdr](https://github.com/herdrdev/herdr-app) by Victor Software House.
+Its terminals draw like [Ghostty](https://ghostty.org): ligatures, kitty images (including the placeholder images Claude Code draws), block-character images, mouse hover, synthetic italics and the macOS 26 title bar.
+
+## Install Herdr VSH
+
+On an Apple Silicon Mac with macOS 26 or newer:
+
+1. Download the zip from the latest [release](https://github.com/victor-software-house/herdr-app/releases/latest).
+2. Unzip it and move `Herdr VSH.app` to Applications.
+3. Open it. It is signed with a Developer ID and notarized by Apple.
+
+Herdr VSH runs beside Herdr and shares nothing with it:
+
+| | Herdr | Herdr VSH |
+|:--|:--|:--|
+| App | `Herdr.app` | `Herdr VSH.app` |
+| Command | `herdr-app` | `herdr-vsh` |
+| Home | `~/.config/herdr-app` | `~/.config/herdr-vsh` |
+| Terminals | the default herdr-core session | the `herdr-vsh` session |
+
+`HERDR_APP_HOME` and `HC_SESSION` still pick another home or session.
+Herdr VSH never updates itself to Herdr and sends no telemetry.
+
+## How it differs from Herdr
+
+Each change is a patch on Herdr, kept with [forkctl](https://github.com/victor-software-house/forkctl).
+[PATCHES.md](PATCHES.md) lists every patch with its purpose and the files it changes.
+
+## License
+
+Apache-2.0, like Herdr. Herdr VSH is derived from Herdr (https://github.com/herdrdev/herdr-app).
+
+The rest of this README is Herdr's own.
+
 # Herdr
 
 Herdr is a desktop app for terminals and coding agents. Keep work in spaces, see which agents need you, and leave terminals running when you close the window.
