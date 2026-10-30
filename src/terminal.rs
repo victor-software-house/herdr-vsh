@@ -1131,16 +1131,9 @@ fn paint_grid(bounds: Bounds<Pixels>, grid: &Rc<RefCell<Grid>>, focused: bool, w
             g.images.insert(key, Arc::new(RenderImage::new(smallvec::smallvec![image::Frame::new(buf)])));
         }
         if let Some(img) = g.images.get(&key) {
-            let [x, y, mut width, mut height] = p.pixel_geometry(f32::from(cell.width), f32::from(cell.height));
-            if p.cell_pixels.is_none() {
-                // Direct placements are in device pixels.
-                width /= scale;
-                height /= scale;
-            }
-            let pos = origin + point(px(x), px(y));
-            // Placeholder runs contain no text and must cover explicit cell backgrounds.
-            let below = p.z < 0 && p.cell_pixels.is_none();
-            images.push((below, Bounds::new(pos, size(px(width), px(height))), img.clone()));
+            let pos = origin
+                + point(cell.width * p.col as f32 + px(p.offset[0] as f32), cell.height * p.row as f32 + px(p.offset[1] as f32));
+            images.push((p.below_text, Bounds::new(pos, size(px(p.width as f32), px(p.height as f32))), img.clone()));
         }
     }
     g.images.retain(|k, _| keep.contains(k));
@@ -1157,9 +1150,11 @@ fn paint_grid(bounds: Bounds<Pixels>, grid: &Rc<RefCell<Grid>>, focused: bool, w
         Bounds::new(point(x0, y0), size(x1 - x0, y1 - y0))
     };
     let paint_images = |below: bool, window: &mut Window| {
-        for (image_below, b, img) in &images {
-            if *image_below == below {
-                let _ = window.paint_image(*b, *b, Corners::default(), img.clone(), 0, false);
+        for (below_text, b, img) in &images {
+            if *below_text == below {
+                // Placeholder images arrive one slice per row: snapped edges meet without seams.
+                let b = snap_box(*b);
+                let _ = window.paint_image(b, b, Corners::default(), img.clone(), 0, false);
             }
         }
     };
