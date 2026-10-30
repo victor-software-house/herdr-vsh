@@ -378,6 +378,15 @@ pub struct Person {
     pub font: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub font_size: Option<f32>,
+    /// The terminals' OpenType features, as Ghostty writes them: `ss01`,
+    /// `-calt`, `liga=0`. The font's defaults (ligatures on) apply otherwise.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub font_features: Vec<String>,
+    /// The terminals' weights for plain and bold text (CSS 100..900).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub font_weight: Option<f32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub font_weight_bold: Option<f32>,
     /// The panels' font (their sizes follow zoom).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub ui_font: Option<String>,
@@ -443,6 +452,9 @@ impl Default for Person {
             core: None,
             font: None,
             font_size: None,
+            font_features: Vec::new(),
+            font_weight: None,
+            font_weight_bold: None,
             ui_font: None,
             telemetry: true,
             clipboard_write: true,
@@ -462,6 +474,10 @@ impl Default for Person {
 pub struct Settings {
     pub font_family: String,
     pub font_size: f32,
+    /// The terminals' OpenType features, as written in settings.json.
+    pub font_features: Vec<String>,
+    pub font_weight: f32,
+    pub font_weight_bold: f32,
     pub ui_font_family: String,
     pub ui_font_size: f32,
     /// How big the whole app is drawn (1 = as designed). The zoom keys change it.
@@ -509,6 +525,10 @@ impl Default for Settings {
         Settings {
             font_family: DEFAULT_FONT.into(),
             font_size: 14.0,
+            font_features: Vec::new(),
+            // Ghostty's: the family's Regular and Bold faces.
+            font_weight: 400.0,
+            font_weight_bold: 700.0,
             ui_font_family: "Geist".into(),
             ui_font_size: 13.0,
             zoom: 1.0,
@@ -545,6 +565,9 @@ impl Settings {
             // The layout's own, else the person's, else Herdr's.
             font_family: look.font.clone().or(person.font.clone()).unwrap_or(d.font_family),
             font_size: look.font_size.or(person.font_size).unwrap_or(d.font_size),
+            font_features: person.font_features.clone(),
+            font_weight: person.font_weight.unwrap_or(d.font_weight),
+            font_weight_bold: person.font_weight_bold.unwrap_or(d.font_weight_bold),
             ui_font_family: look.ui_font.clone().or(person.ui_font.clone()).unwrap_or(d.ui_font_family),
             ui_font_size: d.ui_font_size,
             zoom: person.zoom,
@@ -608,6 +631,16 @@ impl Settings {
         }
         if !(6.0..=72.0).contains(&self.font_size) {
             out.push(format!("font_size {} is outside 6..72", self.font_size));
+        }
+        for f in &self.font_features {
+            if font_feature(f).is_none() {
+                out.push(format!("font_features: {f:?} is not a feature like ss01, -calt or liga=0"));
+            }
+        }
+        for (k, w) in [("font_weight", self.font_weight), ("font_weight_bold", self.font_weight_bold)] {
+            if !(100.0..=900.0).contains(&w) {
+                out.push(format!("{k} {w} is outside 100..900"));
+            }
         }
         out
     }
@@ -803,6 +836,20 @@ pub fn terminal_font() -> String {
     }
 }
 
+/// One `font_features` entry in Ghostty's syntax: `tag` or `+tag` turns it
+/// on, `-tag` off, `tag=n` sets a value (stylistic alternates take 1..).
+pub fn font_feature(s: &str) -> Option<(String, u32)> {
+    let s = s.trim();
+    let (tag, value) = if let Some(t) = s.strip_prefix('-') {
+        (t, 0)
+    } else if let Some((t, v)) = s.split_once('=') {
+        (t.trim(), v.trim().parse().ok()?)
+    } else {
+        (s.strip_prefix('+').unwrap_or(s), 1)
+    };
+    (tag.len() == 4 && tag.bytes().all(|b| b.is_ascii_graphic())).then(|| (tag.to_owned(), value))
+}
+
 /// Fonts Herdr ships, so the defaults look the same everywhere.
 pub const BUNDLED_FONTS: &[&[u8]] = &[
     include_bytes!("../assets/fonts/GeistMono-Variable.ttf"),
@@ -906,11 +953,24 @@ mod tests {
         assert_eq!(Settings::compose(&person, &win98.look, true).theme, "ink");
     }
 
+    #[test]
+    fn font_features_read_ghostty_syntax() {
+        assert_eq!(font_feature("ss01"), Some(("ss01".into(), 1)));
+        assert_eq!(font_feature("+liga"), Some(("liga".into(), 1)));
+        assert_eq!(font_feature("-calt"), Some(("calt".into(), 0)));
+        assert_eq!(font_feature("cv01 = 2"), Some(("cv01".into(), 2)));
+        assert_eq!(font_feature("ligatures"), None);
+        assert_eq!(font_feature("liga=on"), None);
+        let person: Person = serde_json::from_value(serde_json::json!({"font_features": ["ss01", "nopes"], "font_weight": 50})).unwrap();
+        let problems = Settings::compose(&person, &crate::layout::Look::default(), true).problems();
+        assert_eq!(problems.len(), 2, "{problems:?}");
+    }
+
     /// The guide agents read (written to the home folder) explains every
     /// settings.json key.
     #[test]
     fn the_guide_explains_every_setting() {
-        let all = Person { core: Some(String::new()), font: Some(String::new()), font_size: Some(1.0), ui_font: Some(String::new()), telemetry: false, clipboard_write: false, appearance: Appearance::Light, theme: Some(crate::layout::ThemeChoice::One(String::new())), colors: [("text".into(), String::new())].into(), ..Person::default() };
+        let all = Person { core: Some(String::new()), font: Some(String::new()), font_size: Some(1.0), font_features: vec!["ss01".into()], font_weight: Some(400.0), font_weight_bold: Some(700.0), ui_font: Some(String::new()), telemetry: false, clipboard_write: false, appearance: Appearance::Light, theme: Some(crate::layout::ThemeChoice::One(String::new())), colors: [("text".into(), String::new())].into(), ..Person::default() };
         let keys: Vec<String> = serde_json::to_value(&all).unwrap().as_object().unwrap().keys().cloned().collect();
         let guide = include_str!("../defaults/AGENTS.md");
         let section = guide.split("## The person").nth(1).and_then(|s| s.split("\n## ").next()).unwrap_or_default();

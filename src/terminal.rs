@@ -982,10 +982,12 @@ fn map_key(key: &str) -> Option<(GhosttyKey, bool, Option<char>)> {
 }
 
 fn cell_font(bold: bool, italic: bool) -> Font {
+    let s = crate::settings::get();
     let mut f = font(crate::settings::terminal_font());
-    // Ligatures merge several cells into one glyph, which breaks the grid.
-    f.features = FontFeatures(std::sync::Arc::new(vec![("calt".into(), 0), ("liga".into(), 0), ("dlig".into(), 0)]));
-    f.weight = if bold { FontWeight::BOLD } else { FontWeight::MEDIUM };
+    // Ligatures stay on, as in Ghostty: glyphs are placed by the cell they
+    // start at, so one that covers several cells keeps the grid.
+    f.features = FontFeatures(std::sync::Arc::new(s.font_features.iter().filter_map(|f| crate::settings::font_feature(f)).collect()));
+    f.weight = FontWeight(if bold { s.font_weight_bold } else { s.font_weight });
     f.style = if italic { FontStyle::Italic } else { FontStyle::Normal };
     f
 }
