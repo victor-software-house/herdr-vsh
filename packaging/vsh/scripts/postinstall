@@ -1,0 +1,9 @@
+#!/bin/sh
+# Runs as root once Herdr VSH.app is in the install location ($2): opens it
+# for the person at the screen. `installer` on the command line (Homebrew)
+# sets COMMAND_LINE_INSTALL and leaves it closed.
+[ -n "$COMMAND_LINE_INSTALL" ] && exit 0
+user=$(stat -f %Su /dev/console)
+[ "$user" = root ] && exit 0
+launchctl asuser "$(id -u "$user")" sudo -u "$user" open "$2/Herdr VSH.app" || true
+exit 0

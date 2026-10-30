@@ -1,0 +1,112 @@
+#!/bin/bash
+# Herdr VSH's macOS download: Herdr-VSH.pkg, which puts Herdr VSH.app in
+# /Applications. The app and the package are signed with Developer ID,
+# notarized and stapled.
+# Built without HERDR_APP_RELEASE: no Herdr updates, telemetry or feedback.
+# The binary keeps its own home and core session (src/mods.rs APP_ID).
+# Needs the identities in a searched keychain and NOTARY_KEY_PATH,
+# NOTARY_KEY_ID and NOTARY_ISSUER_ID (victor-software-house/actions/macos-signing),
+# and APPLE_TEAM_ID, the team whose Developer ID identities sign.
+set -euo pipefail
+
+out=${1:?usage: vsh-package-macos output.pkg}
+: "${NOTARY_KEY_PATH:?missing notary key}"
+: "${NOTARY_KEY_ID:?missing notary key ID}"
+: "${NOTARY_ISSUER_ID:?missing notary issuer}"
+: "${APPLE_TEAM_ID:?missing Apple team ID}"
+
+# The SHA-1 of the team's "Developer ID <kind>: … (<team>)" identity.
+identity() {
+  local sha
+  sha=$(security find-identity -v | awk -v kind="\"Developer ID $1: " -v team="($APPLE_TEAM_ID)\"" \
+    'index($0, kind) && index($0, team) { print $2; exit }')
+  [[ -n $sha ]] || { echo "vsh-package-macos: no Developer ID $1 identity for team $APPLE_TEAM_ID" >&2; return 1; }
+  echo "$sha"
+}
+app_identity=$(identity Application)
+installer_identity=$(identity Installer)
+version=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)
+build=${GITHUB_REF_NAME:-v$version}
+build=${build#vsh-v}
+
+cargo build --release --locked --bin herdr-vsh
+
+work=$(mktemp -d)
+trap 'rm -rf "$work"' EXIT
+app="$work/root/Herdr VSH.app"
+mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources"
+cp target/release/herdr-vsh "$app/Contents/MacOS/herdr-vsh"
+cp assets/icons/Herdr.icns "$app/Contents/Resources/Herdr.icns"
+cp LICENSE THIRD-PARTY-NOTICES "$app/Contents/Resources/"
+cat > "$app/Contents/Info.plist" <<PLIST
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+    <key>CFBundleExecutable</key><string>herdr-vsh</string>
+    <key>CFBundleIdentifier</key><string>com.victor-software-house.herdr</string>
+    <key>CFBundleName</key><string>Herdr VSH</string>
+    <key>CFBundleDisplayName</key><string>Herdr VSH</string>
+    <key>CFBundleIconFile</key><string>Herdr</string>
+    <key>CFBundlePackageType</key><string>APPL</string>
+    <key>CFBundleShortVersionString</key><string>$version</string>
+    <key>CFBundleVersion</key><string>$build</string>
+    <key>LSMinimumSystemVersion</key><string>26.0</string>
+    <key>NSPrincipalClass</key><string>NSApplication</string>
+    <key>NSHighResolutionCapable</key><true/>
+</dict></plist>
+PLIST
+# QuickJS uses MAP_JIT; hardened runtime otherwise blocks hot mod code.
+codesign --force --options runtime --timestamp --entitlements scripts/macos-entitlements.plist \
+  --sign "$app_identity" "$app"
+codesign --verify --deep --strict "$app"
+
+# Installed where it is, replacing any earlier copy, never relocated to a moved one.
+cat > "$work/component.plist" <<'PLIST'
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><array><dict>
+    <key>BundleHasStrictIdentifier</key><true/>
+    <key>BundleIsRelocatable</key><false/>
+    <key>BundleIsVersionChecked</key><false/>
+    <key>BundleOverwriteAction</key><string>upgrade</string>
+    <key>RootRelativeBundlePath</key><string>Herdr VSH.app</string>
+</dict></array></plist>
+PLIST
+pkgbuild --root "$work/root" --component-plist "$work/component.plist" --install-location /Applications \
+  --scripts packaging/vsh/scripts \
+  --identifier com.victor-software-house.herdr.pkg --version "$build" "$work/component.pkg"
+
+# The installer's pages: welcome, license, conclusion, the icon in the corner.
+# Only Apple Silicon on macOS 26 or newer, always into /Applications.
+resources="$work/resources"
+cp -R packaging/vsh/resources "$resources"
+cp LICENSE "$resources/LICENSE.txt"
+sips -Z 180 assets/icons/herdr-ui-icon-clean.png --out "$resources/background.png" >/dev/null
+cat > "$work/distribution.xml" <<XML
+<?xml version="1.0" encoding="utf-8"?>
+<installer-gui-script minSpecVersion="2">
+    <title>Herdr VSH</title>
+    <welcome file="welcome.html" mime-type="text/html"/>
+    <license file="LICENSE.txt"/>
+    <conclusion file="conclusion.html" mime-type="text/html"/>
+    <background file="background.png" alignment="bottomleft" scaling="none"/>
+    <background-darkAqua file="background.png" alignment="bottomleft" scaling="none"/>
+    <options customize="never" require-scripts="false" hostArchitectures="arm64"/>
+    <domains enable_localSystem="true" enable_currentUserHome="false" enable_anywhere="false"/>
+    <volume-check>
+        <allowed-os-versions><os-version min="26.0"/></allowed-os-versions>
+    </volume-check>
+    <choices-outline><line choice="app"/></choices-outline>
+    <choice id="app" visible="false"><pkg-ref id="com.victor-software-house.herdr.pkg"/></choice>
+    <pkg-ref id="com.victor-software-house.herdr.pkg" version="$build" onConclusion="none">component.pkg</pkg-ref>
+</installer-gui-script>
+XML
+mkdir -p "$(dirname "$out")"
+productbuild --distribution "$work/distribution.xml" --resources "$resources" --package-path "$work" \
+  --sign "$installer_identity" "$out"
+
+xcrun notarytool submit "$out" --key "$NOTARY_KEY_PATH" --key-id "$NOTARY_KEY_ID" --issuer "$NOTARY_ISSUER_ID" --wait --timeout 30m
+xcrun stapler staple "$out"
+pkgutil --check-signature "$out"
+spctl --assess -vv --type install "$out"
+xcrun stapler validate "$out"
