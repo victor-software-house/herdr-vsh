@@ -155,6 +155,18 @@ patches:
       - scripts/docs.ts
       - scripts/docs.test.ts
       - docs/commands.md
+  - name: core-path-order
+    kind: source
+    purpose: >-
+      Keep the person's PATH order when the core is already the first one found, so
+      wrappers and shims ahead of the core's folder (such as a claude launcher in front
+      of ~/.local/bin) still run in Herdr terminals.
+    upstream_status: not-submitted
+    drop_when: >-
+      Upstream stops moving the core's folder ahead of PATH entries that do not hold
+      another core.
+    scope:
+      - src/core_bin.rs
   - name: fork-ci
     kind: tooling
     purpose: "Run only the fork's own CI: the upstream test workflow on pushes to downstream and pull requests, on standard GitHub-hosted runners, with no release publishing."
