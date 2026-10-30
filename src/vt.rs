@@ -131,10 +131,14 @@ pub struct Placement {
     pub generation: u64,
     pub col: i32,
     pub row: i32,
+    /// Where the image starts inside the top-left cell, px.
+    pub offset: [u32; 2],
     pub width: u32,
     pub height: u32,
     pub source: [u32; 4],
     pub z: i32,
+    /// Drawn under the text, not over it.
+    pub below_text: bool,
 }
 
 unsafe extern "C" fn on_write_pty(_t: GhosttyTerminal, userdata: *mut c_void, data: *const u8, len: usize) {
@@ -242,6 +246,8 @@ pub struct Vt {
     last_motion: Option<(u32, u32)>,
     pub cols: u16,
     pub rows: u16,
+    /// Cell height in pixels, as last given to `resize`.
+    cell_h: u32,
     theme: Theme,
     /// The built-in 256-color palette, which the theme's 16 colors override.
     base_palette: [GhosttyColorRgb; 256],
@@ -392,6 +398,7 @@ impl Vt {
                 last_motion: None,
                 cols,
                 rows,
+                cell_h: 1,
                 theme: theme(),
                 base_palette: colors.palette,
                 gesture,
@@ -440,49 +447,71 @@ impl Vt {
         std::mem::take(&mut self.shared.replies)
     }
 
-    /// Visible kitty graphics placements, bottom layer first.
+    /// Visible kitty graphics placements, bottom layer first, from the render
+    /// state `frame` last updated. The render state also resolves images placed
+    /// with Unicode placeholder cells, which the storage alone can't place.
     pub fn placements(&self) -> Vec<Placement> {
         let mut out = Vec::new();
         unsafe {
-            let mut g: GhosttyKittyGraphics = std::ptr::null_mut();
-            if ghostty_terminal_get(self.term, GHOSTTY_TERMINAL_DATA_KITTY_GRAPHICS, &mut g as *mut _ as *mut c_void) != GHOSTTY_SUCCESS || g.is_null() {
+            let mut it: GhosttyRenderStateImageIterator = std::ptr::null_mut();
+            if ghostty_render_state_image_iterator_new(std::ptr::null(), &mut it) != GHOSTTY_SUCCESS {
                 return out;
             }
-            let mut it: GhosttyKittyGraphicsPlacementIterator = std::ptr::null_mut();
-            if ghostty_kitty_graphics_placement_iterator_new(std::ptr::null(), &mut it) != GHOSTTY_SUCCESS {
-                return out;
-            }
-            if ghostty_kitty_graphics_get(g, GHOSTTY_KITTY_GRAPHICS_DATA_PLACEMENT_ITERATOR, &mut it as *mut _ as *mut c_void) == GHOSTTY_SUCCESS {
-                while ghostty_kitty_graphics_placement_next(it) {
-                    let (mut id, mut z, mut virt) = (0u32, 0i32, false);
-                    ghostty_kitty_graphics_placement_get(it, GHOSTTY_KITTY_GRAPHICS_PLACEMENT_DATA_IMAGE_ID, &mut id as *mut _ as *mut c_void);
-                    ghostty_kitty_graphics_placement_get(it, GHOSTTY_KITTY_GRAPHICS_PLACEMENT_DATA_Z, &mut z as *mut _ as *mut c_void);
-                    ghostty_kitty_graphics_placement_get(it, GHOSTTY_KITTY_GRAPHICS_PLACEMENT_DATA_IS_VIRTUAL, &mut virt as *mut _ as *mut c_void);
-                    let img = ghostty_kitty_graphics_image(g, id);
-                    if virt || img.is_null() {
+            if ghostty_render_state_get(self.shared.state, GHOSTTY_RENDER_STATE_DATA_IMAGE_ITERATOR, &mut it as *mut _ as *mut c_void) == GHOSTTY_SUCCESS {
+                while ghostty_render_state_image_iterator_next(it) {
+                    let get = |kind, out: *mut c_void| ghostty_render_state_image_get(it, kind, out) == GHOSTTY_SUCCESS;
+                    let mut protocol: GhosttyImageProtocol = GHOSTTY_IMAGE_PROTOCOL_KITTY;
+                    if !get(GHOSTTY_RENDER_STATE_IMAGE_DATA_PROTOCOL, &mut protocol as *mut _ as *mut c_void) || protocol != GHOSTTY_IMAGE_PROTOCOL_KITTY {
                         continue;
                     }
-                    let mut info = GhosttyKittyGraphicsPlacementRenderInfo { size: std::mem::size_of::<GhosttyKittyGraphicsPlacementRenderInfo>(), ..Default::default() };
-                    if ghostty_kitty_graphics_placement_render_info(it, img, self.term, &mut info) != GHOSTTY_SUCCESS || !info.viewport_visible {
-                        continue;
-                    }
-                    let mut generation = 0u64;
-                    ghostty_kitty_graphics_image_get(img, GHOSTTY_KITTY_IMAGE_DATA_GENERATION, &mut generation as *mut _ as *mut c_void);
-                    out.push(Placement {
-                        image: id,
-                        generation,
-                        col: info.viewport_col,
-                        row: info.viewport_row,
-                        width: info.pixel_width,
-                        height: info.pixel_height,
-                        source: [info.source_x, info.source_y, info.source_width, info.source_height],
-                        z,
-                    });
+                    let (mut image, mut generation, mut layer, mut z) = (0u32, 0u64, GHOSTTY_RENDER_STATE_IMAGE_LAYER_ABOVE_TEXT, 0i32);
+                    let (mut col, mut row) = (0i32, 0i32);
+                    let (mut offset, mut width, mut height, mut source) = ([0u32; 2], 0u32, 0u32, [0u32; 4]);
+                    get(GHOSTTY_RENDER_STATE_IMAGE_DATA_IMAGE_ID, &mut image as *mut _ as *mut c_void);
+                    get(GHOSTTY_RENDER_STATE_IMAGE_DATA_IMAGE_GENERATION, &mut generation as *mut _ as *mut c_void);
+                    get(GHOSTTY_RENDER_STATE_IMAGE_DATA_LAYER, &mut layer as *mut _ as *mut c_void);
+                    get(GHOSTTY_RENDER_STATE_IMAGE_DATA_Z, &mut z as *mut _ as *mut c_void);
+                    get(GHOSTTY_RENDER_STATE_IMAGE_DATA_VIEWPORT_COL, &mut col as *mut _ as *mut c_void);
+                    get(GHOSTTY_RENDER_STATE_IMAGE_DATA_VIEWPORT_ROW, &mut row as *mut _ as *mut c_void);
+                    get(GHOSTTY_RENDER_STATE_IMAGE_DATA_CELL_OFFSET_X, &mut offset[0] as *mut _ as *mut c_void);
+                    get(GHOSTTY_RENDER_STATE_IMAGE_DATA_CELL_OFFSET_Y, &mut offset[1] as *mut _ as *mut c_void);
+                    get(GHOSTTY_RENDER_STATE_IMAGE_DATA_PIXEL_WIDTH, &mut width as *mut _ as *mut c_void);
+                    get(GHOSTTY_RENDER_STATE_IMAGE_DATA_PIXEL_HEIGHT, &mut height as *mut _ as *mut c_void);
+                    get(GHOSTTY_RENDER_STATE_IMAGE_DATA_SOURCE_X, &mut source[0] as *mut _ as *mut c_void);
+                    get(GHOSTTY_RENDER_STATE_IMAGE_DATA_SOURCE_Y, &mut source[1] as *mut _ as *mut c_void);
+                    get(GHOSTTY_RENDER_STATE_IMAGE_DATA_SOURCE_WIDTH, &mut source[2] as *mut _ as *mut c_void);
+                    get(GHOSTTY_RENDER_STATE_IMAGE_DATA_SOURCE_HEIGHT, &mut source[3] as *mut _ as *mut c_void);
+                    let below_text = layer != GHOSTTY_RENDER_STATE_IMAGE_LAYER_ABOVE_TEXT;
+                    out.push(Placement { image, generation, col, row, offset, width, height, source, z, below_text });
                 }
             }
-            ghostty_kitty_graphics_placement_iterator_free(it);
+            ghostty_render_state_image_iterator_free(it);
         }
-        out.sort_by_key(|p| p.z);
+        // A placeholder image comes one slice per row. Joined back into one
+        // placement, it draws as a single image, with no seams between rows.
+        // libghostty rounds each slice's source and height on its own
+        // (graphics_unicode.zig renderPlacement), so neighbours can overlap or
+        // miss by a pixel: the joined slice spans first top to last bottom.
+        let cell_h = self.cell_h;
+        out.dedup_by(|next, prev| {
+            let prev_end = prev.offset[1] + prev.height;
+            let rows = prev_end.div_ceil(cell_h);
+            let joins = next.image == prev.image
+                && next.generation == prev.generation
+                && (next.below_text, next.z) == (prev.below_text, prev.z)
+                && (next.col, next.offset[0], next.width) == (prev.col, prev.offset[0], prev.width)
+                && (next.source[0], next.source[2]) == (prev.source[0], prev.source[2])
+                && next.source[1].abs_diff(prev.source[1] + prev.source[3]) <= 1
+                && prev_end + 1 >= rows * cell_h
+                && next.row == prev.row + rows as i32
+                && next.offset[1] == 0;
+            if joins {
+                prev.source[3] = next.source[1] + next.source[3] - prev.source[1];
+                prev.height = rows * cell_h + next.height - prev.offset[1];
+            }
+            joins
+        });
+        out.sort_by_key(|p| (!p.below_text, p.z));
         out
     }
 
@@ -741,6 +770,7 @@ impl Vt {
         }
         self.cols = cols;
         self.rows = rows;
+        self.cell_h = cell_h.max(1);
         unsafe { ghostty_terminal_resize(self.term, cols, rows, cell_w.max(1), cell_h.max(1)) };
     }
 
@@ -970,6 +1000,10 @@ impl Vt {
                     let mut cps = vec![0u32; len as usize];
                     ghostty_render_state_row_cells_get(c, GHOSTTY_RENDER_STATE_ROW_CELLS_DATA_GRAPHEMES_BUF, cps.as_mut_ptr() as *mut c_void);
                     text = cps.into_iter().filter_map(char::from_u32).collect();
+                }
+                // A kitty image placeholder: the image is drawn there instead (`placements`).
+                if text.starts_with('\u{10EEEE}') {
+                    text.clear();
                 }
             }
 
@@ -1346,6 +1380,7 @@ mod tests {
         vt.resize(20, 5, 8, 16);
         // A 1x1 red PNG, transmitted and displayed, asking for a reply.
         vt.write(b"\x1b_Ga=T,f=100,i=7,q=0;iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4z8DwHwAFAAH/iZk9HQAAAABJRU5ErkJggg==\x1b\\");
+        vt.frame();
         let p = vt.placements();
         assert_eq!(p.len(), 1, "{p:?}");
         assert_eq!((p[0].image, p[0].col, p[0].row), (7, 0, 0));
@@ -1354,6 +1389,47 @@ mod tests {
         assert_eq!(&bgra[..], &[0, 0, 255, 255]);
         let reply = String::from_utf8(vt.take_replies()).unwrap();
         assert!(reply.contains("i=7") && reply.contains("OK"), "{reply:?}");
+    }
+
+    #[test]
+    fn kitty_placeholder_cells_place_their_image() {
+        let mut vt = Vt::new(10, 5);
+        vt.resize(10, 5, 10, 10);
+        // A 1x2 RGB image with a 2x1 virtual placement, then its two placeholder cells.
+        vt.write(b"\x1b_Ga=T,t=d,f=24,i=1,p=1,s=1,v=2,U=1,c=2,r=1,q=2;////////\x1b\\");
+        vt.write("\x1b[2;4H\x1b[38;5;1;58;5;1m\u{10EEEE}\u{10EEEE}".as_bytes());
+        let frame = vt.frame();
+        let p = vt.placements();
+        assert_eq!(p.len(), 1, "{p:?}");
+        assert_eq!((p[0].image, p[0].col, p[0].row), (1, 3, 1));
+        assert!(frame.rows[1][3].text.is_empty(), "the placeholder glyph is not drawn");
+    }
+
+    #[test]
+    fn kitty_placeholder_rows_join_into_one_image() {
+        let mut vt = Vt::new(10, 5);
+        vt.resize(10, 5, 10, 10);
+        // A 2x3 RGB image over 2x3 cells: three rows of placeholders, row diacritics 0, 1, 2.
+        vt.write(b"\x1b_Ga=T,t=d,f=24,i=1,p=1,s=2,v=3,U=1,c=2,r=3,q=2;AAAAAAAAAAAAAAAAAAAAAAAA\x1b\\");
+        vt.write("\x1b[38;5;1;58;5;1m\x1b[2;4H\u{10EEEE}\u{305}\u{10EEEE}\u{305}\x1b[3;4H\u{10EEEE}\u{30D}\u{10EEEE}\u{30D}\x1b[4;4H\u{10EEEE}\u{30E}\u{10EEEE}\u{30E}".as_bytes());
+        vt.frame();
+        let p = vt.placements();
+        assert_eq!(p.len(), 1, "{p:?}");
+        assert_eq!((p[0].col, p[0].row, p[0].height, p[0].source[3]), (3, 1, 30, 3));
+    }
+
+    #[test]
+    fn kitty_placeholder_rows_join_across_rounded_source_rows() {
+        let mut vt = Vt::new(10, 5);
+        vt.resize(10, 5, 10, 10);
+        // A 2x8 image over 2x3 cells: 8/3 source rows per cell row, so libghostty
+        // rounds each slice on its own (y 0, 3, 5; height 3 each) and they overlap.
+        vt.write(format!("\x1b_Ga=T,t=d,f=24,i=1,p=1,s=2,v=8,U=1,c=2,r=3,q=2;{}\x1b\\", "A".repeat(64)).as_bytes());
+        vt.write("\x1b[38;5;1;58;5;1m\x1b[2;4H\u{10EEEE}\u{305}\u{10EEEE}\u{305}\x1b[3;4H\u{10EEEE}\u{30D}\u{10EEEE}\u{30D}\x1b[4;4H\u{10EEEE}\u{30E}\u{10EEEE}\u{30E}".as_bytes());
+        vt.frame();
+        let p = vt.placements();
+        assert_eq!(p.len(), 1, "{p:?}");
+        assert_eq!((p[0].row, p[0].offset[1], p[0].height, p[0].source[1], p[0].source[3]), (1, 0, 30, 0, 8));
     }
 
     #[test]
