@@ -2,7 +2,7 @@
 
 import { View, div, svg, image } from "gpui-kit";
 import { h_flex } from "gpui-base";
-import { spaces, panes, run, theme, home, openOverlay, window as win } from "herdr";
+import { spaces, panes, run, theme, home, openOverlay, window as win, layout, settings } from "herdr";
 
 const C = {
   tray: "#1d1f22",
@@ -137,8 +137,10 @@ export default class TerminalsBar extends View {
       .size_full()
       .gap(8)
       .items_center()
-      // macOS: the window buttons sit here (the layout's traffic_lights).
-      .when(w.platform === "macos" && w.titlebar === "none" && !w.fullscreen, (el) => el.pl(72))
+      // macOS: the window buttons sit here (the layout's traffic_lights), in window pixels, so unzoom them.
+      .when(w.platform === "macos" && w.titlebar === "none" && !w.fullscreen, (el) =>
+        el.pl(((layout()?.traffic_lights?.[0] ?? 16) + 70) / settings().zoom),
+      )
       .child(
         own(h_flex())
           .id("tm-space")

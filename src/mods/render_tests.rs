@@ -282,10 +282,10 @@ fn tabs_leave_room_for_macos_traffic_lights(cx: &mut TestAppContext) {
     cx.update(gpui_shell::init);
     let staged = Staged::new();
     for (platform, titlebar, fullscreen, width, lights, zoom, expected) in [
-        ("macos", "none", false, 44, true, 1.0, 32),
-        ("macos", "none", false, 44, true, 0.5, 108),
+        ("macos", "none", false, 44, true, 1.0, 38),
+        ("macos", "none", false, 44, true, 0.5, 120),
         ("macos", "none", false, 44, true, 2.0, 10),
-        ("macos", "none", false, 60, true, 1.0, 16),
+        ("macos", "none", false, 60, true, 1.0, 22),
         ("macos", "none", false, 76, true, 1.0, 10),
         ("macos", "none", false, 268, true, 1.0, 10),
         ("macos", "none", true, 44, true, 1.0, 10),

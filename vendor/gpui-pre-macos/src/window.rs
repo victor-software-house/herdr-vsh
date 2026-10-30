@@ -687,6 +687,9 @@ struct MacWindowState {
     input_handler: Option<PlatformInputHandler>,
     last_key_equivalent: Option<KeyDownEvent>,
     last_left_mouse_down_event: Option<Retained<Objc2Object>>,
+    // HERDR: a window move in progress (`start_window_move`): where the pointer and
+    // the window's origin were when it began, in screen coordinates.
+    window_move: Option<(NSPoint, NSPoint)>,
     synthetic_drag_counter: usize,
     traffic_light_position: Option<Point<Pixels>>,
     traffic_light_frames: Option<TrafficLightFrames>,
@@ -719,7 +722,35 @@ struct MacWindowState {
 }
 
 impl MacWindowState {
+    /// HERDR: macOS 26 and later draw a titlebar background over full-size content even
+    /// when the titlebar is transparent. Hide it, as Ghostty does
+    /// (`TransparentTitlebarTerminalWindow.swift`); AppKit can restore it, so this runs
+    /// on every traffic light layout pass.
+    fn hide_titlebar_background(&self) {
+        if !self.transparent_titlebar
+            || !is_macos_version_at_least(NSOperatingSystemVersion::new(26, 0, 0))
+        {
+            return;
+        }
+        fn find(view: &Objc2NSView) -> Option<Retained<Objc2NSView>> {
+            view.subviews().iter().find_map(|sub| {
+                if sub.class().name() == c"NSTitlebarBackgroundView" {
+                    Some(sub)
+                } else {
+                    find(&sub)
+                }
+            })
+        }
+        let Some(buttons) = self.traffic_light_buttons() else {
+            return;
+        };
+        if let Some(background) = Self::titlebar_container(&buttons.close).and_then(|c| find(&c)) {
+            background.setHidden(true);
+        }
+    }
+
     fn move_traffic_light(&mut self) {
+        self.hide_titlebar_background();
         if let Some(traffic_light_position) = self.traffic_light_position {
             if self.is_fullscreen() && !self.is_exiting_fullscreen {
                 self.restore_traffic_light();
@@ -1128,6 +1159,7 @@ impl MacWindow {
                 input_handler: None,
                 last_key_equivalent: None,
                 last_left_mouse_down_event: None,
+                window_move: None,
                 synthetic_drag_counter: 0,
                 traffic_light_position: titlebar
                     .as_ref()
@@ -2236,11 +2268,18 @@ impl PlatformWindow for MacWindow {
             return;
         }
         let window = this.native_window;
-
+        drop(this);
+        // HERDR: from the macOS 26 SDK on, AppKit begins a window drag only while it
+        // handles the mouse-down itself. `performWindowDragWithEvent:` from a later
+        // mouse-dragged event (the app decides it is a drag past a threshold), even
+        // with the original mouse-down, logs "Window move completed without beginning"
+        // and the window stays put. So the window follows the pointer itself: the
+        // mouse-dragged events that follow move it (`handle_view_event`), until the
+        // mouse-up.
         unsafe {
-            let app = NSApplication::sharedApplication(nil);
-            let event: id = msg_send![app, currentEvent];
-            let _: () = msg_send![window, performWindowDragWithEvent: event];
+            let pointer: NSPoint = msg_send![class!(NSEvent), mouseLocation];
+            let frame: NSRect = msg_send![window, frame];
+            self.0.lock().window_move = Some((pointer, frame.origin));
         }
     }
 
@@ -2810,6 +2849,22 @@ extern "C" fn handle_view_event(this: &Object, _: Sel, native_event: id) {
         }
         NSEventType::NSLeftMouseUp => {
             lock.last_left_mouse_down_event = None;
+            lock.window_move = None;
+        }
+        NSEventType::NSLeftMouseDragged => {
+            // HERDR: a window move in progress follows the pointer (`start_window_move`).
+            // The lock is released first: moving the window calls back into
+            // `window_did_move`.
+            if let Some((pointer, origin)) = lock.window_move {
+                let window = lock.native_window;
+                drop(lock);
+                unsafe {
+                    let now: NSPoint = msg_send![class!(NSEvent), mouseLocation];
+                    let to = NSPoint::new(origin.x + now.x - pointer.x, origin.y + now.y - pointer.y);
+                    let _: () = msg_send![window, setFrameOrigin: to];
+                }
+                lock = window_state.as_ref().lock();
+            }
         }
         _ => {}
     }
