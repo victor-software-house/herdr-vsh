@@ -240,6 +240,8 @@ impl TerminalView {
             // The core repaints the whole screen (and history) on attach.
             let cell = device_cell(g.cell, g.scale);
             g.vt = Vt::new(cols, rows);
+            // Addresses on other machines are `machine/tN`.
+            g.vt.allow_local_image_media(!self.address.contains('/'));
             g.vt.resize(cols, rows, cell.0, cell.1);
             g.vt_cell = cell;
             g.told_display = None;
