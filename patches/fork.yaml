@@ -75,7 +75,48 @@ patches:
     upstream_status: not-submitted
     drop_when: GPUI or Herdr synthesizes italics for families without an italic face.
     scope:
-      - vendor/gpui-pre-macos/**
+      - vendor/gpui-pre-macos/src/text_system.rs
+  - name: macos-26-titlebar
+    kind: source
+    purpose: "Fit the macOS 26 titlebar: hide the background macOS 26 and later draw over the transparent titlebar, as Ghostty does, and leave room for the wider-spaced window buttons at any zoom."
+    upstream_status: not-submitted
+    drop_when: >-
+      GPUI or Herdr hides the macOS 26 titlebar background and sizes the
+      window-button gap for macOS 26 itself.
+    scope:
+      - vendor/gpui-pre-macos/src/window.rs
+      - src/window.rs
+      - defaults/mods/tabs/main.js
+      - defaults/mods/terminals-bar/main.js
+      - src/mods/render_tests.rs
+      - defaults/mods/workspace-chrome/main.js
+      - defaults/mods/agents/main.js
+  - name: kitty-placeholders
+    kind: source
+    purpose: "Draw kitty images placed with Unicode placeholders (Claude Code images): bump vendored Ghostty to 9fc5ec6b, which resolves placeholders in the render state, build it with Zig 0.17, and draw every image from the render state list."
+    upstream_status: not-submitted
+    drop_when: >-
+      Upstream herdr-app draws images from a Ghostty render state that resolves
+      placeholders.
+    scope:
+      - vendor/ghostty
+      - crates/ghostty-sys/build.rs
+      - src/vt.rs
+      - src/terminal.rs
+      - README.md
+      - licenses/inventory.json
+      - THIRD-PARTY-NOTICES
+  - name: kitty-file-media
+    kind: source
+    purpose: >-
+      Accept kitty images sent by file path, temporary file or shared memory, as
+      Ghostty does, so Claude Code image previews draw.
+    upstream_status: not-submitted
+    drop_when: >-
+      Upstream herdr-app enables the libghostty-vt kitty file, temporary file and
+      shared memory media.
+    scope:
+      - src/vt.rs
   - name: fork-ci
     kind: tooling
     purpose: "Run only the fork's own CI: the upstream test workflow on pushes to downstream and pull requests, on standard GitHub-hosted runners, with no release publishing."
