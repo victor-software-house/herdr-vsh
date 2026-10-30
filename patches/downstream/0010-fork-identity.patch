@@ -1,0 +1,886 @@
+fork-identity
+
+From: Victor Araújo <victor@victor-software-house.com>
+
+Downstream-Reason: Run beside Herdr without sharing anything: the fork has its own home, window app id and herdr-core session by default.
+Upstream-Status: not-submitted
+Drop-When: The fork stops shipping as a separate app beside Herdr.
+---
+ Cargo.toml                     |    5 ++++
+ README.md                      |   46 +++++++++++++++++++++++++++++++++++++
+ THIRD-PARTY-NOTICES            |    2 +-
+ defaults/AGENTS.md             |   50 ++++++++++++++++++++--------------------
+ defaults/frame/welcome/main.js |    2 +-
+ defaults/herdr.d.ts            |    4 ++-
+ docs/commands.md               |   10 ++++----
+ docs/mods.md                   |    4 ++-
+ docs/security.md               |    2 +-
+ scripts/docs.test.ts           |   40 ++++++++++++++++----------------
+ scripts/docs.ts                |    8 +++---
+ src/SKILL.md                   |   40 ++++++++++++++++----------------
+ src/control.rs                 |   10 ++++----
+ src/core_bin/cli_link.rs       |   26 ++++++++++-----------
+ src/main.rs                    |   44 ++++++++++++++++++++---------------
+ src/mods.rs                    |    8 +++++-
+ src/setup.rs                   |    2 +-
+ src/window.rs                  |    2 +-
+ tests/commands.rs              |    2 +-
+ tests/skill.rs                 |    4 ++-
+ 20 files changed, 186 insertions(+), 125 deletions(-)
+
+diff --git a/Cargo.toml b/Cargo.toml
+index dedd9da501433eb88e79056ea31fd415e10f39e1..cb448f46956adbbcf150d685ecf4a0b2f3b97264 100644
+--- a/Cargo.toml
++++ b/Cargo.toml
+@@ -36,6 +36,11 @@ fancy-regex = "0.19"
+ notify = "7"
+ sha2 = "0.10"
+ 
++# Herdr VSH's command, apart from Herdr's herdr-app.
++[[bin]]
++name = "herdr-vsh"
++path = "src/main.rs"
++
+ [[test]]
+ name = "shot_pixels"
+ path = "tests/shot_pixels.rs"
+diff --git a/README.md b/README.md
+index 2571cbcbd9998fd4c76b00bb1f1d2828b5927cec..07a800463b57ec43bdb10b76cf962a668ccaddb6 100644
+--- a/README.md
++++ b/README.md
+@@ -1,3 +1,49 @@
++# Herdr VSH
++
++Herdr VSH is a build of [Herdr](https://github.com/herdrdev/herdr-app) by Victor Software House.
++Its terminals draw like [Ghostty](https://ghostty.org): ligatures, kitty images (including the placeholder images Claude Code draws), block-character images, mouse hover, synthetic italics and the macOS 26 title bar.
++
++## Install Herdr VSH
++
++[![Download Herdr VSH for macOS](https://img.shields.io/badge/Download-Herdr--VSH.pkg-2b2b2b?style=for-the-badge&logo=apple&logoColor=white)](https://github.com/victor-software-house/herdr-app/releases/latest/download/Herdr-VSH.pkg)
++
++For Apple Silicon Macs with macOS 26 or newer.
++Open `Herdr-VSH.pkg` and it installs `Herdr VSH.app` in Applications, replacing any earlier copy.
++The app and the package are signed with a Developer ID and notarized by Apple.
++
++With Homebrew:
++
++```sh
++brew install --cask victor-software-house/forks/herdr-vsh
++```
++
++`brew upgrade --cask herdr-vsh` installs a newer release.
++Herdr VSH puts its `herdr-vsh` command in `~/.local/bin` the first time it opens.
++[All releases](https://github.com/victor-software-house/herdr-app/releases).
++
++Herdr VSH runs beside Herdr and shares nothing with it:
++
++| | Herdr | Herdr VSH |
++|:--|:--|:--|
++| App | `Herdr.app` | `Herdr VSH.app` |
++| Command | `herdr-app` | `herdr-vsh` |
++| Home | `~/.config/herdr-app` | `~/.config/herdr-vsh` |
++| Terminals | the default herdr-core session | the `herdr-vsh` session |
++
++`HERDR_APP_HOME` and `HC_SESSION` still pick another home or session.
++Herdr VSH never updates itself to Herdr and sends no telemetry.
++
++## How it differs from Herdr
++
++Each change is a patch on Herdr, kept with [forkctl](https://github.com/victor-software-house/forkctl).
++[PATCHES.md](PATCHES.md) lists every patch with its purpose and the files it changes.
++
++## License
++
++Apache-2.0, like Herdr. Herdr VSH is derived from Herdr (https://github.com/herdrdev/herdr-app).
++
++The rest of this README is Herdr's own.
++
+ # Herdr
+ 
+ Herdr is a desktop app for terminals and coding agents. Keep work in spaces, see which agents need you, and leave terminals running when you close the window.
+diff --git a/THIRD-PARTY-NOTICES b/THIRD-PARTY-NOTICES
+index 9e6b9c78f24061df9060eb643b33854f1b883a88..a4dfe92d24f0db11bdf2f69b81cd052436ca37f3 100644
+--- a/THIRD-PARTY-NOTICES
++++ b/THIRD-PARTY-NOTICES
+@@ -3,7 +3,7 @@ Herdr third-party notices
+ Regenerate with just notices. See licenses/README.md.
+ 
+ Input-SHA256: 6a3b4177337bfb82680d2992e24b5f948c0c4ce524bafa5b1c8cf8090f45adba Cargo.lock
+-Input-SHA256: 7b5c770b621f5b2a0f52313a1ac017983ea8f262b08da164a33b00ae1e662ab3 Cargo.toml
++Input-SHA256: 7561437ab6e0c2f4e9fd160e8af21f1d3b29a86c342f3ff58a0e89a263188c36 Cargo.toml
+ Input-SHA256: c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4 LICENSE
+ Input-SHA256: e58cb0de2dde300bcda769ca993fde2737f42c0274082f038621ab22975a49e2 about.toml
+ Input-SHA256: 84a7a98c82140fb12c37fe42b93805baa16024cb3e5acc599b7ffe612c55d847 assets/fonts/LICENSE-SymbolsNerdFont.txt
+diff --git a/defaults/AGENTS.md b/defaults/AGENTS.md
+index 86299f56d9a65a758911913cce939f37f5cdc5f3..059986a564492d25d12c926037666c5d54f2a8f4 100644
+--- a/defaults/AGENTS.md
++++ b/defaults/AGENTS.md
+@@ -16,13 +16,13 @@ from the same parts you have.
+ 
+ ## Two programs
+ 
+-- **`herdr-app`**, the window: spaces, tabs, layouts, panels.
++- **`herdr-vsh`**, the window: spaces, tabs, layouts, panels.
+ - **herdr-core (`hc`)**, which runs every terminal and agent. They keep
+   running when the window closes or updates. You can use `hc` yourself:
+   start a terminal, read its screen, send it text, wait for an agent
+   (`hc --help`). The Herdr app is one client of it.
+ 
+-`herdr-app` controls this app; `hc` controls herdr-core.
++`herdr-vsh` controls this app; `hc` controls herdr-core.
+ 
+ ## What you can and can't do
+ 
+@@ -51,7 +51,7 @@ commands. They're rewritten on every start to match this version.
+ - Edits apply at once. If a file is invalid, the app keeps the last good
+   version and writes why to `<name>.error` (`layout.error`, `keys.error`,
+   `settings.error`, `programs.error`). Check after every edit.
+-- `herdr-app check <mod folder>` loads a mod once and reports what's wrong.
++- `herdr-vsh check <mod folder>` loads a mod once and reports what's wrong.
+   Never call a mod done without a passing check.
+ - **Escape hatch:** `ctrl-alt-shift-escape` always works: it sets the shown
+   layout and `keys.json` aside (`*.reset-<time>`) and goes back to the
+@@ -59,7 +59,7 @@ commands. They're rewritten on every start to match this version.
+ 
+ ## Seeing the window
+ 
+-`herdr-app shot [file.png]` saves the last rendered window frame as a PNG
++`herdr-vsh shot [file.png]` saves the last rendered window frame as a PNG
+ and prints its absolute path (default: `herdr-shot.png` in your current
+ folder). Use it when debugging mod UIs: inspect spacing, colors, terminal
+ images, overlays, popups and floats. It captures the app, not the desktop,
+@@ -90,7 +90,7 @@ If `shared.json` is invalid, Herdr logs a warning and keeps it as
+ 
+ Every layout shows the same world; a layout may show less, never a
+ different one. Each machine keeps its spaces, tabs and splits in its core's
+-`herdr-app` document. Connected screens share that layout and live terminals,
++`herdr-vsh` document. Connected screens share that layout and live terminals,
+ not their focus, zoom or attention. Use commands to change structure; there
+ is no `spaces.json`. On simultaneous edits the newest accepted document wins
+ (no merging); structural commands fail while that machine's layout is unavailable.
+@@ -180,8 +180,8 @@ look. The theme picker overrides any layout. To change a shipped layout's
+ look beyond that, or its structure/code, clone it and edit the clone:
+ 
+ ```sh
+-herdr-app do layout.clone '{"name":"main","as":"my-layout"}'
+-herdr-app do mod.clone '{"name":"files","as":"my-files"}'
++herdr-vsh do layout.clone '{"name":"main","as":"my-layout"}'
++herdr-vsh do mod.clone '{"name":"files","as":"my-files"}'
+ ```
+ 
+ The default clone name is `<name>-copy`; an existing name is refused.
+@@ -423,7 +423,7 @@ folder on GitHub):
+    recipe instead.
+ 4. A mod's `keys.json`: merge it into the person's. Add its sections and
+    keys, and ask before replacing a key they already use.
+-5. `herdr-app check` each mod; for a layout, then `layout.switch {name}`.
++5. `herdr-vsh check` each mod; for a layout, then `layout.switch {name}`.
+    The person's own layout stays as it was; `ctrl-shift-l` switches back,
+    and deleting the files removes it.
+ 
+@@ -486,10 +486,10 @@ the build doesn't do.
+ ## Commands
+ 
+ The one way to change anything; keys, mods (`run(name, args)`), menus and
+-you use the same list. `herdr-app commands` prints every one with its arguments
++you use the same list. `herdr-vsh commands` prints every one with its arguments
+ (which are required) and what it does. Unknown argument names are errors and list
+ valid names; they never fall back to the current target. For example, closing a
+-space uses `herdr-app do space.close --id <id> --confirmed true`, not `--space`.
++space uses `herdr-vsh do space.close --id <id> --confirmed true`, not `--space`.
+ The main ones:
+ 
+ - Spaces: `space.new {name?, folder?, tab?, argv?, task?, machine?}`
+@@ -555,14 +555,14 @@ command says what's missing.
+ From a shell:
+ 
+ ```sh
+-herdr-app do tab.new --name "fix login" --argv '["claude"]' --task "look at the login bug"
+-herdr-app do pane.split:right
+-herdr-app ls          # spaces, their tabs and terminals (sub-agents under their parent)
+-herdr-app status      # what's on screen: layout, focus, overlays, zoom, errors from files and mods
+-herdr-app commands    # every command and its arguments
++herdr-vsh do tab.new --name "fix login" --argv '["claude"]' --task "look at the login bug"
++herdr-vsh do pane.split:right
++herdr-vsh ls          # spaces, their tabs and terminals (sub-agents under their parent)
++herdr-vsh status      # what's on screen: layout, focus, overlays, zoom, errors from files and mods
++herdr-vsh commands    # every command and its arguments
+ ```
+ 
+-`herdr-app do` prints what the command made (`{ "space", "tab",
++`herdr-vsh do` prints what the command made (`{ "space", "tab",
+ "terminal" }`, `{ "pane", "terminal" }`) or `{ "error": "..." }` and exits 1.
+ 
+ ## The person: `settings.json`
+@@ -579,7 +579,7 @@ What's about the user, never a look:
+   When an agent needs the person, or finishes while they aren't looking at
+   it, Herdr plays a sound and (unless they're looking) posts a toast that
+   goes there when clicked. `done` / `blocked` replace the bundled MP3s
+-  (path absolute or relative to `~/.config/herdr-app`).
++  (path absolute or relative to `~/.config/herdr-vsh`).
+ - `core`: the herdr-core binary to use, when it isn't where Herdr looks
+   (PATH, the login shell's PATH, `~/.local/bin`, Homebrew, mise, Nix,
+   cargo). Read at start.
+@@ -625,7 +625,7 @@ What's about the user, never a look:
+   macOS releases require Apple Silicon; Intel Macs must build from source.
+   Keep signed macOS bundles unchanged: don't edit their Info.plist or
+   re-sign them. On launch, an installed macOS bundle creates or repairs its
+-  own `~/.local/bin/herdr-app` symlink, leaving personal files and other
++  own `~/.local/bin/herdr-vsh` symlink, leaving personal files and other
+   apps' links alone. Disk-image and translocated launches don't create it.
+   Finder launches load the login shell's PATH, with the usual install
+   folders as a fallback.
+@@ -694,7 +694,7 @@ has 120 programs (agents, editors, runtimes, tools, databases, infra);
+ ## Mods: `mods/<name>/`
+ 
+ ```
+-~/.config/herdr-app/mods/<name>/
++~/.config/herdr-vsh/mods/<name>/
+   main.js       the mod (required)
+   mod.json    where it first appears: { "place": "right" | "left" | "top" | "bottom" | "none", "size": 320 }
+   *.js, *.svg   more modules ("./ui.js"), its own icons
+@@ -706,7 +706,7 @@ has 120 programs (agents, editors, runtimes, tools, databases, infra);
+   (not files the app writes: `jsconfig.json`, `.d.ts`, hidden ones,
+   `node_modules`). The old build's tasks and timers stop: a loop ends at its
+   next `cx` use. A broken save keeps the old version running and shows in
+-  `herdr-app status`; its top-level code has already run, so keep side effects
++  `herdr-vsh status`; its top-level code has already run, so keep side effects
+   on `globalThis` out of the module's top level.
+ - A copy starts the first time it shows, then stays alive while its block is in
+   the layout, shown or not (a hidden column, the other child of a stack, a pane
+@@ -714,7 +714,7 @@ has 120 programs (agents, editors, runtimes, tools, databases, infra);
+   timers keep running while hidden, so poll gently. Another layout starts its
+   mods fresh (pane mods belong to their tab and stay); a block removed or given
+   another mod or props starts over. `<mod>.<command>` reaches shown copies only.
+-- Images and SVGs are referenced from `~/.config/herdr-app`:
++- Images and SVGs are referenced from `~/.config/herdr-vsh`:
+   `image("mods/<name>/logo.svg")` (full color), `svg("mods/<name>/icon.svg")`
+   (tinted with the text color).
+ - The defaults are mods too, read them as examples: `spaces`, `agents`,
+@@ -736,7 +736,7 @@ has 120 programs (agents, editors, runtimes, tools, databases, infra);
+ ### Check before you finish
+ 
+ ```sh
+-herdr-app check ~/.config/herdr-app/mods/<name>
++herdr-vsh check ~/.config/herdr-vsh/mods/<name>
+ ```
+ 
+ Loads the mod, renders it once, exits nonzero with the exact error. Run it
+@@ -905,14 +905,14 @@ All of it is in `herdr.d.ts`. In short:
+ 
+ Mods are trusted code: commands and network access (including `fetch`) are unrestricted.
+ Other built-ins: `localStorage` (per mod copy), `console.log`, `fetch`,
+-`import * as fs from "fs/promises"` (read in home, write under `~/.config/herdr-app`).
++`import * as fs from "fs/promises"` (read in home, write under `~/.config/herdr-vsh`).
+ 
+ ## herdr-core (`hc`)
+ 
+-`herdr-app --skill` prints the manual for driving this window;
++`herdr-vsh --skill` prints the manual for driving this window;
+ `hc --skill` prints the manual for running and coordinating programs and agents,
+ including a small herdr-core skill you can install with the user's permission.
+-`herdr-app commands` lists app commands and arguments without needing an open window.
++`herdr-vsh commands` lists app commands and arguments without needing an open window.
+ 
+ - `hc ls --json`, `hc read t3 --lines 50`, `hc run --json --cwd <dir> --label k=v -- <cmd>`,
+   `hc label t3 k=v`, `hc send t3 "text"`, `hc wait t3`. `hc --help` for all.
+diff --git a/defaults/frame/welcome/main.js b/defaults/frame/welcome/main.js
+index 7304a28df59256b868d88af0c5089f3e45eb88ff..d094880a3715966814b1334a5948797bddc20005 100644
+--- a/defaults/frame/welcome/main.js
++++ b/defaults/frame/welcome/main.js
+@@ -7,7 +7,7 @@ import { spaces, run, theme, props, closeOverlay, setShared, shared, hc, appHome
+ const I = (name) => `frame/welcome/${name}.svg`;
+ const W = (name) => `mods/workspace-chrome/${name}.svg`;
+ const PAGES = 4;
+-const ASK = "Read ~/.config/herdr-app/AGENTS.md, then tell me what you can change in Herdr.";
++const ASK = "Read ~/.config/herdr-vsh/AGENTS.md, then tell me what you can change in Herdr.";
+ const MIGRATE = "Read `herdr-app --skill`, then migrate my keybinds and settings from ~/.config/herdr/config.toml";
+ const APPEARANCES = [
+   [null, "System"],
+diff --git a/defaults/herdr.d.ts b/defaults/herdr.d.ts
+index c9db3736db76f4bf63605130a39308df5db8d9ce..cab54dc75a77467856fc313628e42a971db55785 100644
+--- a/defaults/herdr.d.ts
++++ b/defaults/herdr.d.ts
+@@ -17,7 +17,7 @@ export function hc(args: string[]): Promise<ExecResult>;
+ 
+ /** The user's home directory. */
+ export function home(): string;
+-/** The app's folder (`~/.config/herdr-app`, or `$HERDR_APP_HOME`): settings.json, keys.json, layouts/. */
++/** The app's folder (`~/.config/herdr-vsh`, or `$HERDR_APP_HOME`): settings.json, keys.json, layouts/. */
+ export function appHome(): string;
+ 
+ /** Reads UTF-8 text (up to 1 MiB), or null if absent. Runs off the UI thread.
+@@ -37,7 +37,7 @@ export function knownAgents(options?: { on?: string | null }): Promise<(Program
+ export function pickFolder(options?: { prompt?: string }): Promise<string | null>;
+ 
+ /** Plays "done" or "blocked" (the attention sounds, or the files settings.json names), or an MP3
+- *  file (absolute, or relative to ~/.config/herdr-app). */
++ *  file (absolute, or relative to ~/.config/herdr-vsh). */
+ export function playSound(sound: string): null;
+ 
+ /**
+diff --git a/docs/commands.md b/docs/commands.md
+index 54f46d1bee7ed64f10597f2b27ba090cbcc7c10f..c0f2be04a2f1363c73844ab8f7b1bf986bc2dcad 100644
+--- a/docs/commands.md
++++ b/docs/commands.md
+@@ -2,14 +2,14 @@
+ 
+ # Commands
+ 
+-Inspect the window with `herdr-app ls` and `herdr-app status`.
+-`herdr-app commands` lists the app actions below, even without an open window.
++Inspect the window with `herdr-vsh ls` and `herdr-vsh status`.
++`herdr-vsh commands` lists the app actions below, even without an open window.
+ 
+-Run an action in the open window with `herdr-app do`:
++Run an action in the open window with `herdr-vsh do`:
+ 
+ ```sh
+-herdr-app do pane.split --direction right
+-herdr-app do pane.split '{"direction":"right"}'
++herdr-vsh do pane.split --direction right
++herdr-vsh do pane.split '{"direction":"right"}'
+ ```
+ 
+ Arguments can be named flags or one JSON object. Required arguments are marked below.
+diff --git a/docs/mods.md b/docs/mods.md
+index 3ad952ec4525e84abf5893271b7dfd034b6d2190..7864a16af7dd62e9efe116d4c9e026de64732706 100644
+--- a/docs/mods.md
++++ b/docs/mods.md
+@@ -12,8 +12,8 @@ Shipped files update on start; personal copies do not.
+ Save to reload. Check for errors, even when the old screen still looks fine.
+ 
+ ```sh
+-herdr-app check ~/.config/herdr-app/mods/my-panel
+-herdr-app status
++herdr-vsh check ~/.config/herdr-vsh/mods/my-panel
++herdr-vsh status
+ ```
+ 
+ The check loads a mod and renders it once. It does not replace looking at the result in the window.
+diff --git a/docs/security.md b/docs/security.md
+index 31d4649114b75fa1a6a9128515bfb68e6a183445..8a2243bfa30467e63c8783aac79ee98a36ddd283 100644
+--- a/docs/security.md
++++ b/docs/security.md
+@@ -11,7 +11,7 @@ Layouts can load mods. Check those references too.
+ 
+ ## What stays on disk
+ 
+-The default app home is `~/.config/herdr-app`, including on macOS and Windows (under your user home).
++The default app home is `~/.config/herdr-vsh`, including on macOS and Windows (under your user home).
+ `XDG_CONFIG_HOME` changes the config root. `HERDR_APP_HOME` selects an app home directly and takes precedence.
+ 
+ This folder holds your settings, keys, layouts, mods, generated agent guide and API types.
+diff --git a/scripts/docs.test.ts b/scripts/docs.test.ts
+index 7e126e62bbb53001ddc26356ea74efa03e4fe80c..a1c6ed120d3af0d17f629936c31eadad67671732 100644
+--- a/scripts/docs.test.ts
++++ b/scripts/docs.test.ts
+@@ -2,43 +2,43 @@ import { describe, expect, test } from "bun:test";
+ import { checkExample, checkMarkdown, commandPage, type Reference } from "./docs";
+ 
+ const ref: Reference = {
+-  help: "Usage:\n  herdr-app status\n  herdr-app ls\n  herdr-app do <command> [args]\n  herdr-app commands\n  herdr-app --skill\n  herdr-app --version\n",
++  help: "Usage:\n  herdr-vsh status\n  herdr-vsh ls\n  herdr-vsh do <command> [args]\n  herdr-vsh commands\n  herdr-vsh --skill\n  herdr-vsh --version\n",
+   commands: [{ name: "pane.split", about: "Split a pane.", args: [{ name: "direction", required: true }] }],
+ };
+ 
+ describe("CLI examples", () => {
+   test("validates commands and named arguments without executing examples", () => {
+-    for (const source of ["herdr-app", "herdr-app ls", "herdr-app --help", "herdr-app --skill", "herdr-app do pane.split --direction right", `herdr-app do pane.split '{"direction":"right"}'`]) {
++    for (const source of ["herdr-vsh", "herdr-vsh ls", "herdr-vsh --help", "herdr-vsh --skill", "herdr-vsh do pane.split --direction right", `herdr-vsh do pane.split '{"direction":"right"}'`]) {
+       expect(checkExample(source, ref)).toEqual([]);
+     }
+-    expect(checkExample("herdr-app wat", ref)).toEqual(["unknown command or flag: wat"]);
+-    expect(checkExample("herdr-app ls && herdr-app wat", ref)).toEqual(["unknown command or flag: wat"]);
+-    expect(checkExample("herdr-app --wat", ref)).toHaveLength(1);
+-    expect(checkExample("herdr-app ls --wat", ref)).toHaveLength(1);
+-    expect(checkExample("herdr-app do pane.wat", ref)).toHaveLength(1);
+-    expect(checkExample("herdr-app do pane.split --wat right", ref)).toHaveLength(1);
+-    expect(checkExample("herdr-app do pane.split --direction=right", ref)).toContain("unknown flag for do: --direction=right");
+-    expect(checkExample("herdr-app do pane.split --direction='right'", ref)).toContain("unknown flag for do: --direction=right");
+-    expect(checkExample('herdr-app ls "--wat"', ref)).toEqual(["unknown flag for ls: --wat"]);
+-    expect(checkExample('herdr-app do pane.split "--wat" right', ref)).toEqual(["unknown flag for do: --wat"]);
+-    expect(checkExample('herdr-app do pane.split "--direction" "right"', ref)).toEqual([]);
+-    expect(checkExample("herdr-app do pane.split --direction", ref)).toEqual(["missing value for --direction"]);
++    expect(checkExample("herdr-vsh wat", ref)).toEqual(["unknown command or flag: wat"]);
++    expect(checkExample("herdr-vsh ls && herdr-vsh wat", ref)).toEqual(["unknown command or flag: wat"]);
++    expect(checkExample("herdr-vsh --wat", ref)).toHaveLength(1);
++    expect(checkExample("herdr-vsh ls --wat", ref)).toHaveLength(1);
++    expect(checkExample("herdr-vsh do pane.wat", ref)).toHaveLength(1);
++    expect(checkExample("herdr-vsh do pane.split --wat right", ref)).toHaveLength(1);
++    expect(checkExample("herdr-vsh do pane.split --direction=right", ref)).toContain("unknown flag for do: --direction=right");
++    expect(checkExample("herdr-vsh do pane.split --direction='right'", ref)).toContain("unknown flag for do: --direction=right");
++    expect(checkExample('herdr-vsh ls "--wat"', ref)).toEqual(["unknown flag for ls: --wat"]);
++    expect(checkExample('herdr-vsh do pane.split "--wat" right', ref)).toEqual(["unknown flag for do: --wat"]);
++    expect(checkExample('herdr-vsh do pane.split "--direction" "right"', ref)).toEqual([]);
++    expect(checkExample("herdr-vsh do pane.split --direction", ref)).toEqual(["missing value for --direction"]);
+   });
+ 
+   test("ignores flags inside quotes and comments, and other programs", () => {
+-    expect(checkExample(`herdr-app do pane.split --direction '--not-a-flag' # --comment`, ref)).toEqual([]);
++    expect(checkExample(`herdr-vsh do pane.split --direction '--not-a-flag' # --comment`, ref)).toEqual([]);
+     expect(checkExample("curl --not-our-flag https://example.org", ref)).toEqual([]);
+-    expect(checkExample("herdr-app ls | other --not-our-flag", ref)).toEqual([]);
+-    expect(checkExample("herdr-app do pane.split --direction herdr-app", ref)).toEqual([]);
++    expect(checkExample("herdr-vsh ls | other --not-our-flag", ref)).toEqual([]);
++    expect(checkExample("herdr-vsh do pane.split --direction herdr-vsh", ref)).toEqual([]);
+   });
+ 
+   test("reports inline and fenced examples with file and line", () => {
+-    expect(checkMarkdown("README.md", "Text `herdr-app wat`.\n\n```sh\nherdr-app ls --wat\n```", ref)).toEqual([
++    expect(checkMarkdown("README.md", "Text `herdr-vsh wat`.\n\n```sh\nherdr-vsh ls --wat\n```", ref)).toEqual([
+       "README.md:1: unknown command or flag: wat",
+       "README.md:4: unknown flag for ls: --wat",
+     ]);
+-    expect(checkMarkdown("docs/example.md", "~~~sh\nherdr-app do pane.split \\\n  --wat right\n~~~", ref)).toEqual(["docs/example.md:2: unknown flag for do: --wat"]);
+-    expect(checkMarkdown("README.md", "Plain prose herdr-app wat is not code.", ref)).toEqual([]);
++    expect(checkMarkdown("docs/example.md", "~~~sh\nherdr-vsh do pane.split \\\n  --wat right\n~~~", ref)).toEqual(["docs/example.md:2: unknown flag for do: --wat"]);
++    expect(checkMarkdown("README.md", "Plain prose herdr-vsh wat is not code.", ref)).toEqual([]);
+   });
+ });
+ 
+diff --git a/scripts/docs.ts b/scripts/docs.ts
+index deb49f1a1096ac8d960efb2d9d5712b9b040291e..5150e087d710f2863306549ebd263e95d35a598e 100644
+--- a/scripts/docs.ts
++++ b/scripts/docs.ts
+@@ -9,7 +9,7 @@ const code = (value: string) => `\`${cell(value)}\``;
+ const banner = "<!-- Generated by scripts/docs.ts. Run just docs-generate; do not edit. -->\n";
+ 
+ export function commandPage(commands: Command[]): string {
+-  return `${banner}\n# Commands\n\nInspect the window with \`herdr-app ls\` and \`herdr-app status\`.\n\`herdr-app commands\` lists the app actions below, even without an open window.\n\nRun an action in the open window with \`herdr-app do\`:\n\n\`\`\`sh\nherdr-app do pane.split --direction right\nherdr-app do pane.split '{"direction":"right"}'\n\`\`\`\n\nArguments can be named flags or one JSON object. Required arguments are marked below.\nActions use the current selection unless you give an explicit target.\nSome actions close terminals; read their descriptions before running them.\nMods can add their own actions, which are not listed here.\n\n${commands.map(c => `## ${code(c.name)}\n\n${c.about}\n\n${c.args.length ? "| Argument | Required |\n|---|---|\n" + c.args.map(a => `| ${code(a.name)} | ${a.required ? "yes" : "no"} |`).join("\n") : "No arguments."}`).join("\n\n")}\n\n[Back to Herdr](../README.md)\n`;
++  return `${banner}\n# Commands\n\nInspect the window with \`herdr-vsh ls\` and \`herdr-vsh status\`.\n\`herdr-vsh commands\` lists the app actions below, even without an open window.\n\nRun an action in the open window with \`herdr-vsh do\`:\n\n\`\`\`sh\nherdr-vsh do pane.split --direction right\nherdr-vsh do pane.split '{"direction":"right"}'\n\`\`\`\n\nArguments can be named flags or one JSON object. Required arguments are marked below.\nActions use the current selection unless you give an explicit target.\nSome actions close terminals; read their descriptions before running them.\nMods can add their own actions, which are not listed here.\n\n${commands.map(c => `## ${code(c.name)}\n\n${c.about}\n\n${c.args.length ? "| Argument | Required |\n|---|---|\n" + c.args.map(a => `| ${code(a.name)} | ${a.required ? "yes" : "no"} |`).join("\n") : "No arguments."}`).join("\n\n")}\n\n[Back to Herdr](../README.md)\n`;
+ }
+ 
+ // Split shell examples without running them. Quotes group arguments, not flags.
+@@ -47,10 +47,10 @@ function shellCommands(source: string): string[][] {
+ 
+ export function checkExample(source: string, ref: Reference): string[] {
+   const errors: string[] = [];
+-  const verbs = new Set([...ref.help.matchAll(/^\s+herdr-app\s+([\w-]+)/gm)].map(m => m[1]));
++  const verbs = new Set([...ref.help.matchAll(/^\s+herdr-vsh\s+([\w-]+)/gm)].map(m => m[1]));
+   verbs.add("--help"); // The help used to build this reference was obtained with this flag.
+   for (const words of shellCommands(source)) {
+-    const start = words.findIndex(w => /^(?:\.\/|[\w./-]+\/)?herdr-app(?:\.exe)?$/.test(w));
++    const start = words.findIndex(w => /^(?:\.\/|[\w./-]+\/)?herdr-vsh(?:\.exe)?$/.test(w));
+     if (start < 0) continue;
+     const args = words.slice(start + 1);
+     const verb = args.shift();
+@@ -106,7 +106,7 @@ async function run(binary: string, arg: string): Promise<string> {
+ }
+ 
+ async function main() {
+-  const [mode, binary = `target/debug/herdr-app${process.platform === "win32" ? ".exe" : ""}`] = process.argv.slice(2);
++  const [mode, binary = `target/debug/herdr-vsh${process.platform === "win32" ? ".exe" : ""}`] = process.argv.slice(2);
+   if (mode !== "generate" && mode !== "check") throw new Error("usage: bun scripts/docs.ts <generate|check> [binary]");
+   const ref = { help: await run(binary, "--help"), commands: JSON.parse(await run(binary, "commands")) as Command[] };
+   const pages = { "docs/commands.md": commandPage(ref.commands) };
+diff --git a/src/SKILL.md b/src/SKILL.md
+index 6bfb18684c34a8bc7002b665aefd19c22dc4fbee..df2b9e76670140bd453372618b1b1bf7c638f25f 100644
+--- a/src/SKILL.md
++++ b/src/SKILL.md
+@@ -1,7 +1,7 @@
+-# herdr-app: drive the person's window
++# herdr-vsh: drive the person's window
+ 
+ Herdr shows spaces, tabs and panes. herdr-core (`hc`) runs their terminals
+-and keeps them alive when the window closes. Use `herdr-app` only to change
++and keeps them alive when the window closes. Use `herdr-vsh` only to change
+ what the person sees. For starting, reading, messaging, waiting on or cleaning
+ up agents and programs, read `hc --skill` and use hc.
+ Your terminal address is `$HC_TERMINAL_ID`; it is not a pane ID.
+@@ -9,14 +9,14 @@ Your terminal address is `$HC_TERMINAL_ID`; it is not a pane ID.
+ ## Inspect before acting
+ 
+ ```sh
+-herdr-app ls          # spaces > tabs > terminals, including pane IDs
+-herdr-app status      # current layout, focus, overlays, zoom and file/mod errors
+-herdr-app commands    # available commands, arguments and descriptions
++herdr-vsh ls          # spaces > tabs > terminals, including pane IDs
++herdr-vsh status      # current layout, focus, overlays, zoom and file/mod errors
++herdr-vsh commands    # available commands, arguments and descriptions
+ ```
+ 
+ `ls` and `status` talk to the running window, not a new app. `commands`
+ prints the built-in command list even without an open window. Do not launch bare
+-`herdr-app` to inspect it: that opens or raises the window. Do not stop,
++`herdr-vsh` to inspect it: that opens or raises the window. Do not stop,
+ signal or restart the person's app or core. A window closing does not kill
+ its terminals.
+ 
+@@ -28,16 +28,16 @@ default names. Use IDs from `ls` rather than guessing or acting on the wrong
+ focused pane.
+ 
+ ```sh
+-herdr-app do space.new --name api --folder /path/to/api
+-herdr-app do tab.new --name "fix login" --argv '["claude"]' --task "Look at the login bug"
+-herdr-app do pane.split --direction right --pane p12
+-herdr-app do agent.focus --terminal t7
++herdr-vsh do space.new --name api --folder /path/to/api
++herdr-vsh do tab.new --name "fix login" --argv '["claude"]' --task "Look at the login bug"
++herdr-vsh do pane.split --direction right --pane p12
++herdr-vsh do agent.focus --terminal t7
+ ```
+ 
+ For a remote space:
+ 
+ ```sh
+-herdr-app do space.new --name "remote api" --machine vps --folder /srv/api
++herdr-vsh do space.new --name "remote api" --machine vps --folder /srv/api
+ ```
+ 
+ The folder is on that machine; tabs and splits in the space stay there.
+@@ -49,7 +49,7 @@ object. Unknown argument names fail and list valid names; they never target the
+ current space or pane instead. Use `commands` to confirm the command's exact shape:
+ 
+ ```sh
+-herdr-app do pane.split '{"direction":"right","pane":"p12"}'
++herdr-vsh do pane.split '{"direction":"right","pane":"p12"}'
+ ```
+ 
+ It prints the created IDs (for example `{ "pane": "...", "terminal": "..." }`)
+@@ -69,17 +69,17 @@ the screen.
+ 
+ ## Customize layouts, keys, or mods
+ 
+-First read `~/.config/herdr-app/AGENTS.md` (or `$HERDR_APP_HOME/AGENTS.md` if
++First read `~/.config/herdr-vsh/AGENTS.md` (or `$HERDR_APP_HOME/AGENTS.md` if
+ set). It is the installed guide to settings, layouts, commands and mods.
+ Read the generated `.d.ts` files beside it for full API details; do not edit
+ those files or the generated guide. The app rewrites them on start.
+ 
+-- Home defaults to `~/.config/herdr-app`; `HERDR_APP_HOME` selects another.
++- Home defaults to `~/.config/herdr-vsh`; `HERDR_APP_HOME` selects another.
+ - Mods live in `mods/<name>/` with `main.js` and optional `mod.json`.
+   They are trusted JavaScript with command and network access.
+ - Shipped mods belong to Herdr: duplicate with `mod.clone` before editing.
+   Shipped layouts likewise use `layout.clone` for a personal copy.
+-  Discover required arguments with `herdr-app commands`.
++  Discover required arguments with `herdr-vsh commands`.
+ - Save to reload. A broken save keeps the old version running and reports
+   an error in `status`; a still-working screen is not proof the edit worked.
+ - Make only the requested change. Don't touch unrelated mods or settings.
+@@ -94,9 +94,9 @@ those files or the generated guide. The app rewrites them on start.
+ After every mod change:
+ 
+ ```sh
+-herdr-app check ~/.config/herdr-app/mods/<name>
+-herdr-app status
+-herdr-app shot /tmp/mod.png   # then look at the picture
++herdr-vsh check ~/.config/herdr-vsh/mods/<name>
++herdr-vsh status
++herdr-vsh shot /tmp/mod.png   # then look at the picture
+ ```
+ 
+ `check` loads the mod and renders it once. It exits nonzero with the exact
+@@ -104,7 +104,7 @@ error. Never call a mod done without a passing check. Then confirm it is
+ shown correctly in the running window with `shot`; don't claim a visual
+ check you haven't made.
+ 
+-`herdr-app shot [file.png]` saves the window's last frame and prints its
++`herdr-vsh shot [file.png]` saves the window's last frame and prints its
+ absolute path (default: `herdr-shot.png` in your current folder). It is the
+ app's own rendering at full pixel size: terminals, images, overlays and
+ floats included, even when the window is covered or minimized. No screen
+@@ -113,7 +113,7 @@ capture or permissions. It needs a running window that has drawn a frame;
+ 
+ ## Problems and safety
+ 
+-If Herdr misbehaves, `herdr-app feedback "<what happened>"` drafts a report.
++If Herdr misbehaves, `herdr-vsh feedback "<what happened>"` drafts a report.
+ The person reviews and sends it; it does not silently send feedback.
+ 
+ Never experiment with pointer/key automation on the person's real display.
+diff --git a/src/control.rs b/src/control.rs
+index 5833134233e1310ae55bffd75e935916441ca829..d5202576e82a7f2f77b69a4bfdfd27eea87a9885 100644
+--- a/src/control.rs
++++ b/src/control.rs
+@@ -1,5 +1,5 @@
+-//! `herdr-app do <command> [--arg value ... | json]`, `herdr-app ls`, `herdr-app commands`
+-//! and `herdr-app status`: drive a running window from a shell (agents, tests)
++//! `herdr-vsh do <command> [--arg value ... | json]`, `herdr-vsh ls`, `herdr-vsh commands`
++//! and `herdr-vsh status`: drive a running window from a shell (agents, tests)
+ //! over `$HERDR_APP_HOME/herdr-app.sock`, one JSON line each way.
+ 
+ use crate::mods::{self, Request};
+@@ -20,7 +20,7 @@ fn socket() -> PathBuf {
+ pub fn listen(tx: async_channel::Sender<Request>) {
+     let path = socket();
+     if UnixStream::connect(&path).is_ok() {
+-        tracing::warn!("another Herdr is serving {}; `herdr-app do` goes there", path.display());
++        tracing::warn!("another Herdr is serving {}; `herdr-vsh do` goes there", path.display());
+         return;
+     }
+     let _ = std::fs::remove_file(&path);
+@@ -94,7 +94,7 @@ pub fn client(args: &[String]) -> i32 {
+             Ok(a) => json!({ "do": command, "args": a }),
+             Err(e) => return fail(&e),
+         },
+-        _ => return fail("usage: herdr-app ls | herdr-app commands | herdr-app status | herdr-app shot [file.png] | herdr-app do <command> [--arg value ... | json]"),
++        _ => return fail("usage: herdr-vsh ls | herdr-vsh commands | herdr-vsh status | herdr-vsh shot [file.png] | herdr-vsh do <command> [--arg value ... | json]"),
+     };
+     let mut stream = match UnixStream::connect(socket()) {
+         Ok(s) => s,
+@@ -173,7 +173,7 @@ pub fn save_shot(window: &gpui::Window, path: &std::path::Path) -> anyhow::Resul
+ }
+ 
+ fn fail(message: &str) -> i32 {
+-    eprintln!("herdr-app: {message}");
++    eprintln!("herdr-vsh: {message}");
+     2
+ }
+ 
+diff --git a/src/core_bin/cli_link.rs b/src/core_bin/cli_link.rs
+index 88a61dfdaa7bfb468bb4f8b9b29f4a0ec55d2136..683b45a38fad23a8f562006e8497854a620ccd67 100644
+--- a/src/core_bin/cli_link.rs
++++ b/src/core_bin/cli_link.rs
+@@ -4,7 +4,7 @@ use std::io;
+ use std::path::Path;
+ 
+ fn herdr_bundle(exe: &Path) -> bool {
+-    exe.is_absolute() && exe.ends_with("Herdr.app/Contents/MacOS/Herdr")
++    exe.is_absolute() && exe.ends_with("Herdr VSH.app/Contents/MacOS/herdr-vsh")
+ }
+ 
+ fn installed_bundle(exe: &Path) -> bool {
+@@ -17,7 +17,7 @@ pub(super) fn ensure(home: &Path, exe: &Path) -> io::Result<()> {
+     if !installed_bundle(exe) {
+         return Ok(());
+     }
+-    let link = home.join(".local/bin/herdr-app");
++    let link = home.join(".local/bin/herdr-vsh");
+     match std::fs::symlink_metadata(&link) {
+         Ok(meta) if meta.file_type().is_symlink() => {
+             let target = std::fs::read_link(&link)?;
+@@ -48,8 +48,8 @@ mod tests {
+         let home = std::env::temp_dir().join(format!("herdr-cli-link-{}", std::process::id()));
+         let _ = std::fs::remove_dir_all(&home);
+         std::fs::create_dir_all(&home).unwrap();
+-        let exe = home.join("Applications/Herdr.app/Contents/MacOS/Herdr");
+-        let link = home.join(".local/bin/herdr-app");
++        let exe = home.join("Applications/Herdr VSH.app/Contents/MacOS/herdr-vsh");
++        let link = home.join(".local/bin/herdr-vsh");
+         ensure(&home, &exe).unwrap();
+         assert_eq!(std::fs::read_link(&link).unwrap(), exe);
+         // Running it again leaves the same link alone.
+@@ -57,17 +57,17 @@ mod tests {
+         assert_eq!(std::fs::read_link(&link).unwrap(), exe);
+ 
+         for old in [
+-            home.join("old/Herdr.app/Contents/MacOS/Herdr"),
+-            "../../Applications/Herdr.app/Contents/MacOS/Herdr".into(),
+-            "/Volumes/Herdr/Herdr.app/Contents/MacOS/Herdr".into(),
+-            "/private/var/folders/AppTranslocation/old/d/Herdr.app/Contents/MacOS/Herdr".into(),
++            home.join("old/Herdr VSH.app/Contents/MacOS/herdr-vsh"),
++            "../../Applications/Herdr VSH.app/Contents/MacOS/herdr-vsh".into(),
++            "/Volumes/Herdr VSH/Herdr VSH.app/Contents/MacOS/herdr-vsh".into(),
++            "/private/var/folders/AppTranslocation/old/d/Herdr VSH.app/Contents/MacOS/herdr-vsh".into(),
+         ] {
+             std::fs::remove_file(&link).unwrap();
+             symlink(old, &link).unwrap();
+             ensure(&home, &exe).unwrap();
+             assert_eq!(std::fs::read_link(&link).unwrap(), exe);
+         }
+-        let old = home.join("previous/Herdr.app/Contents/MacOS/Herdr");
++        let old = home.join("previous/Herdr VSH.app/Contents/MacOS/herdr-vsh");
+         std::fs::create_dir_all(old.parent().unwrap()).unwrap();
+         std::fs::write(&old, "previous executable").unwrap();
+         std::fs::remove_file(&link).unwrap();
+@@ -88,10 +88,10 @@ mod tests {
+         std::fs::remove_file(&link).unwrap();
+ 
+         for skipped in [
+-            "/Volumes/Herdr/Herdr.app/Contents/MacOS/Herdr",
+-            "/private/var/folders/AppTranslocation/random/d/Herdr.app/Contents/MacOS/Herdr",
+-            "/work/target/debug/Herdr.app/Contents/MacOS/Herdr",
+-            "/work/target/debug/herdr-app",
++            "/Volumes/Herdr VSH/Herdr VSH.app/Contents/MacOS/herdr-vsh",
++            "/private/var/folders/AppTranslocation/random/d/Herdr VSH.app/Contents/MacOS/herdr-vsh",
++            "/work/target/debug/Herdr VSH.app/Contents/MacOS/herdr-vsh",
++            "/work/target/debug/herdr-vsh",
+             "/Applications/Other.app/Contents/MacOS/Herdr",
+         ] {
+             ensure(&home, Path::new(skipped)).unwrap();
+diff --git a/src/main.rs b/src/main.rs
+index d3348d44cdfcde279e896eabecbdf2a0e4d58ded..cc153b787589699d57d9e8fc454aff2a12c9953d 100644
+--- a/src/main.rs
++++ b/src/main.rs
+@@ -39,28 +39,29 @@ mod window;
+ use gpui::*;
+ 
+ const HELP: &str = "\
+-herdr-app: the Herdr desktop app. With no arguments it opens the window.
++herdr-vsh: Herdr VSH, a build of the Herdr desktop app. With no arguments it opens the window.
+ 
+ Usage:
+-  herdr-app                        open the window
+-  herdr-app ls                     spaces, their tabs and terminals, in the open window
+-  herdr-app do <command> [args]    run a command: --name api --argv '[\"pi\"]', or one JSON object
+-  herdr-app feedback <text>        draft feedback for the person to review and send
+-  herdr-app commands               every command, its arguments, what it does
+-  herdr-app status                 what the window shows, and any errors
+-  herdr-app shot [file.png]        save the last window frame (default: herdr-shot.png)
+-  herdr-app check <mod folder>     load a mod once and report what's wrong
+-  herdr-app --skill                Agent Skill: driving the window, and where hc fits
+-  herdr-app --version
++  herdr-vsh                        open the window
++  herdr-vsh ls                     spaces, their tabs and terminals, in the open window
++  herdr-vsh do <command> [args]    run a command: --name api --argv '[\"pi\"]', or one JSON object
++  herdr-vsh feedback <text>        draft feedback for the person to review and send
++  herdr-vsh commands               every command, its arguments, what it does
++  herdr-vsh status                 what the window shows, and any errors
++  herdr-vsh shot [file.png]        save the last window frame (default: herdr-shot.png)
++  herdr-vsh check <mod folder>     load a mod once and report what's wrong
++  herdr-vsh --skill                Agent Skill: driving the window, and where hc fits
++  herdr-vsh --version
+ 
+ The terminals run in herdr-core (`hc`), which keeps them alive when the
+ window closes. `hc --help`: start, read, wait on and talk to terminals and
+ agents. The app shows them and arranges them in spaces and tabs.
+ 
+-Home: ~/.config/herdr-app (HERDR_APP_HOME picks another).
++Home: ~/.config/herdr-vsh (HERDR_APP_HOME picks another). Its terminals
++run in their own herdr-core session, herdr-vsh (HC_SESSION picks another).
+ ";
+ 
+-/// A Windows window app has no console: answers to `herdr-app ls` and the
++/// A Windows window app has no console: answers to `herdr-vsh ls` and the
+ /// like go to the terminal it was started from. Output already piped (agents,
+ /// scripts) keeps its pipes.
+ #[cfg(windows)]
+@@ -74,12 +75,17 @@ fn attach_console() {
+ }
+ 
+ fn main() {
++    // Herdr VSH keeps its terminals in its own core session, apart from Herdr's.
++    if std::env::var_os("HC_SESSION").is_none_or(|s| s.is_empty()) {
++        // SAFETY: first thing in main, before any other thread reads the environment.
++        unsafe { std::env::set_var("HC_SESSION", mods::APP_ID) };
++    }
+     let args: Vec<String> = std::env::args().collect();
+     #[cfg(windows)]
+     if args.len() > 1 {
+         attach_console();
+     }
+-    // `herdr-app check <mod>` / `herdr-app types <mod>`: gpui-shell's own checker, with Herdr's module installed.
++    // `herdr-vsh check <mod>` / `herdr-vsh types <mod>`: gpui-shell's own checker, with Herdr's module installed.
+     if matches!(args.get(1).map(String::as_str), Some("check" | "types")) {
+         mods::install_policy();
+         gpui_shell::host::main_with_components(gpui_shell::FrozenComponentRegistry::default());
+@@ -95,9 +101,9 @@ fn main() {
+         None => {}
+         Some("-h" | "--help" | "help") => return print!("{HELP}"),
+         Some("--skill") => return print!("{}", include_str!("SKILL.md")),
+-        Some("-V" | "--version" | "version") => return println!("herdr-app {}", env!("CARGO_PKG_VERSION")),
++        Some("-V" | "--version" | "version") => return println!("herdr-vsh {}", env!("CARGO_PKG_VERSION")),
+         Some(other) => {
+-            eprint!("herdr-app: unknown argument {other:?}\n\n{HELP}");
++            eprint!("herdr-vsh: unknown argument {other:?}\n\n{HELP}");
+             std::process::exit(2);
+         }
+     }
+@@ -129,7 +135,7 @@ fn main() {
+                 // One that can't serve this app gets the screen that fixes it.
+                 Ok(core) => hc::check(&core.hello).map(|()| core).map_err(setup::Need::Fix),
+                 Err(e) => {
+-                    eprintln!("herdr-app: {e:#}");
++                    eprintln!("herdr-vsh: {e:#}");
+                     Err(setup::Need::Install)
+                 }
+             }
+@@ -144,7 +150,7 @@ fn main() {
+     telemetry::start(settings::telemetry_setting(&person));
+     bench::start();
+     if let Err(e) = mods::write_workspace() {
+-        eprintln!("herdr-app: cannot write {}: {e}", mods::app_dir().display());
++        eprintln!("herdr-vsh: cannot write {}: {e}", mods::app_dir().display());
+     }
+ 
+     gpui_platform::application()
+@@ -212,7 +218,7 @@ pub fn open_main(core: std::sync::Arc<hc::Core>, requests: async_channel::Receiv
+                 }),
+                 app_owns_titlebar_drag: cfg!(target_os = "macos"),
+                 // Herdr Dev and other side-by-side builds get their own dock icon.
+-                app_id: Some(std::env::var("HERDR_APP_ID").ok().filter(|s| !s.is_empty()).unwrap_or_else(|| "herdr-app".into())),
++                app_id: Some(std::env::var("HERDR_APP_ID").ok().filter(|s| !s.is_empty()).unwrap_or_else(|| mods::APP_ID.into())),
+                 ..Default::default()
+             };
+             cx.open_window(options, |window, cx| cx.new(|cx| window::AppWindow::new(core, requests, window, cx)))
+diff --git a/src/mods.rs b/src/mods.rs
+index 3a171ddca3a93ab264b2a8181de56f3df35d53f4..456186a64660eff8ab861386f8b4bfd6cdcd5481 100644
+--- a/src/mods.rs
++++ b/src/mods.rs
+@@ -44,11 +44,15 @@ pub fn note_fonts(cx: &gpui::App) {
+     *FONTS.lock().unwrap() = names;
+ }
+ 
++/// Herdr VSH's name for its home, window app id and herdr-core session, so it
++/// runs beside Herdr and shares nothing with it.
++pub const APP_ID: &str = "herdr-vsh";
++
+ /// The app's home: `$HERDR_APP_HOME` (tests, experiments), else
+-/// `$XDG_CONFIG_HOME/herdr-app`, else `~/.config/herdr-app`, on every OS.
++/// `$XDG_CONFIG_HOME/herdr-vsh`, else `~/.config/herdr-vsh`, on every OS.
+ pub fn app_dir() -> PathBuf {
+     let env = |k: &str| std::env::var_os(k).filter(|v| !v.is_empty()).map(PathBuf::from);
+-    env("HERDR_APP_HOME").unwrap_or_else(|| env("XDG_CONFIG_HOME").unwrap_or_else(|| home().join(".config")).join("herdr-app"))
++    env("HERDR_APP_HOME").unwrap_or_else(|| env("XDG_CONFIG_HOME").unwrap_or_else(|| home().join(".config")).join(APP_ID))
+ }
+ 
+ pub fn mods_dir() -> PathBuf {
+diff --git a/src/setup.rs b/src/setup.rs
+index 67631922e50c591084c6bf176daf35b79fc03667..a10658bd6fdb67e6365f25ae8375d28996afe8c3 100644
+--- a/src/setup.rs
++++ b/src/setup.rs
+@@ -49,7 +49,7 @@ pub fn open(need: Need, requests: async_channel::Receiver<Request>, cx: &mut App
+     let options = WindowOptions {
+         window_bounds: Some(WindowBounds::Windowed(Bounds::centered(None, size(px(620.0), px(460.0)), cx))),
+         titlebar: Some(TitlebarOptions { title: Some("Herdr".into()), ..Default::default() }),
+-        app_id: Some("herdr-app".into()),
++        app_id: Some(crate::mods::APP_ID.into()),
+         ..Default::default()
+     };
+     let icon = Arc::new(Image::from_bytes(ImageFormat::Png, ICON.to_vec()));
+diff --git a/src/window.rs b/src/window.rs
+index 3dbe2d2a8f7c6785c694064cc2647ca905ae3028..f1fdf62e7f5f843beaa5900197a023d42fd35ec0 100644
+--- a/src/window.rs
++++ b/src/window.rs
+@@ -1487,7 +1487,7 @@ impl AppWindow {
+     fn load(&self, inst: Instance, window: &mut Window, cx: &mut Context<Self>) -> Copy {
+         let mut copy = Copy { inst, id: 0, root: None, _watch: None, error: None };
+         let (Some(runtime), Some(folder)) = (&self.runtime, self.folders.get(&copy.inst.name)) else {
+-            copy.error = Some(format!("no mod folder ~/.config/herdr-app/mods/{}", copy.inst.name));
++            copy.error = Some(format!("no mod folder ~/.config/herdr-vsh/mods/{}", copy.inst.name));
+             return copy;
+         };
+         copy.id = mods::prepare_load(&copy.inst);
+diff --git a/tests/commands.rs b/tests/commands.rs
+index 4f516eb72ec4bc1efbfb990e9ad26362ced3fe99..618446058bff4e30449e6d0d55ba43a7d6e0df68 100644
+--- a/tests/commands.rs
++++ b/tests/commands.rs
+@@ -7,7 +7,7 @@ fn commands_need_no_window_or_app_home() {
+         std::process::id(),
+         std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos(),
+     ));
+-    let output = Command::new(env!("CARGO_BIN_EXE_herdr-app"))
++    let output = Command::new(env!("CARGO_BIN_EXE_herdr-vsh"))
+         .arg("commands")
+         .env("HERDR_APP_HOME", &home)
+         .output()
+diff --git a/tests/skill.rs b/tests/skill.rs
+index 265fb689368e80ec03b4c196dffe4293b61505e2..869ea84d784e151d41ea5c3d8d5d6d82f3438bbe 100644
+--- a/tests/skill.rs
++++ b/tests/skill.rs
+@@ -2,11 +2,11 @@ use std::process::Command;
+ 
+ #[test]
+ fn skill_prints_the_window_manual() {
+-    let output = Command::new(env!("CARGO_BIN_EXE_herdr-app")).arg("--skill").output().unwrap();
++    let output = Command::new(env!("CARGO_BIN_EXE_herdr-vsh")).arg("--skill").output().unwrap();
+     assert!(output.status.success());
+     let skill = String::from_utf8(output.stdout).unwrap();
+     assert_eq!(skill, include_str!("../src/SKILL.md"));
+     assert!(skill.lines().count() < 500, "skill must stay under 500 lines");
+-    assert!(skill.starts_with("# herdr-app:"));
++    assert!(skill.starts_with("# herdr-vsh:"));
+     assert!(skill.contains("hc --skill"));
+ }
