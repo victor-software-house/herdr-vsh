@@ -585,6 +585,10 @@ What's about the user, never a look:
   cargo). Read at start.
 - `font`, `font_size`, `ui_font`: used where the layout doesn't set its
   own. Herdr (main) leaves these unset. Bigger panels: `zoom`.
+- `font_features`: the terminals' OpenType features, as Ghostty writes
+  them (`["ss01", "-calt", "cv01=2"]`). Ligatures are on unless turned off.
+- `font_weight`, `font_weight_bold`: the terminals' weights for plain and
+  bold text, 100 to 900 (default 400 and 700, the Regular and Bold faces).
 - `theme`: a theme name or `{light, dark}`; used where the layout sets none.
   The theme picker overrides any layout and stays on that layout.
 - `colors`: theme color overrides (`{"accent":"#ff8800"}`), with the same
