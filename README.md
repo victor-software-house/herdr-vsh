@@ -1,11 +1,16 @@
 # Herdr VSH
 
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/vsh/banner-dark.svg">
+  <img src="docs/vsh/banner.svg" alt="herdr-vsh — Herdr, drawn like Ghostty. brew install --cask victor-software-house/forks/herdr-vsh">
+</picture>
+
 Herdr VSH is a build of [Herdr](https://github.com/herdrdev/herdr-app) by Victor Software House.
 Its terminals draw like [Ghostty](https://ghostty.org): ligatures, kitty images (including the placeholder images Claude Code draws), block-character images, mouse hover, synthetic italics and the macOS 26 title bar.
 
 ## Install Herdr VSH
 
-[![Download Herdr VSH for macOS](https://img.shields.io/badge/Download-Herdr--VSH.pkg-2b2b2b?style=for-the-badge&logo=apple&logoColor=white)](https://github.com/victor-software-house/herdr-app/releases/latest/download/Herdr-VSH.pkg)
+[![Download Herdr VSH for macOS](https://img.shields.io/badge/Download-Herdr--VSH.pkg-2b2b2b?style=for-the-badge&logo=apple&logoColor=white)](https://github.com/victor-software-house/herdr-vsh/releases/latest/download/Herdr-VSH.pkg)
 
 For Apple Silicon Macs with macOS 26 or newer.
 Open `Herdr-VSH.pkg` and it installs `Herdr VSH.app` in Applications, replacing any earlier copy.
@@ -19,7 +24,7 @@ brew install --cask victor-software-house/forks/herdr-vsh
 
 `brew upgrade --cask herdr-vsh` installs a newer release.
 Herdr VSH puts its `herdr-vsh` command in `~/.local/bin` the first time it opens.
-[All releases](https://github.com/victor-software-house/herdr-app/releases).
+[All releases](https://github.com/victor-software-house/herdr-vsh/releases).
 
 Herdr VSH runs beside Herdr and shares nothing with it:
 

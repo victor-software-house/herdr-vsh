@@ -155,6 +155,7 @@ patches:
       - scripts/docs.ts
       - scripts/docs.test.ts
       - docs/commands.md
+      - docs/vsh/**
   - name: core-path-order
     kind: source
     purpose: >-
