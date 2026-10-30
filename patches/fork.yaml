@@ -1,0 +1,230 @@
+%YAML 1.2
+---
+schema: 1
+downstream:
+  remote: origin
+  branch: downstream
+  recovery_tag_prefix: forkctl/recovery
+  publish: append
+upstream:
+  remote: upstream
+  url: https://github.com/herdrdev/herdr-app.git
+  fetch_ref: refs/heads/master
+base:
+  target:
+    kind: tag
+    selector: refs/tags/v0.1.11
+    commit: e12fd31866f33cb613922d0b33ea506e6f23ce3c
+  canonical: e12fd31866f33cb613922d0b33ea506e6f23ce3c
+  stack: e12fd31866f33cb613922d0b33ea506e6f23ce3c
+documents:
+  ledger: PATCHES.md
+  exports: patches/downstream
+bookkeeping_patch: fork-tooling
+patches:
+  - name: terminal-font-features
+    kind: source
+    purpose: >-
+      Draw terminal text with the font's ligatures and the person's OpenType features
+      and weights, as Ghostty does, instead of forcing calt, liga and dlig off and
+      requesting Medium and Bold.
+    upstream_status: not-submitted
+    drop_when: >-
+      Upstream herdr-app reads terminal font features and weights from settings and
+      keeps ligatures on by default.
+    scope:
+      - src/settings.rs
+      - src/terminal.rs
+      - defaults/AGENTS.md
+  - name: cluster-glyph-placement
+    kind: source
+    purpose: >-
+      Place forced-width glyphs at the cell their cluster starts in, as Ghostty does,
+      so a ligature spans the cells it replaces and combining marks stay on their base.
+    upstream_status: not-submitted
+    drop_when: >-
+      Upstream GPUI or herdr-app places forced-width glyphs by cluster rather than by
+      glyph index.
+    scope:
+      - vendor/gpui-pre/**
+      - Cargo.lock
+      - THIRD-PARTY-NOTICES
+  - name: legacy-computing-sprites
+    kind: source
+    purpose: "Draw block mosaics that block-character images and TUIs use as shapes that fill their cell, as Ghostty does: sextants, octants, smooth mosaics, eighth blocks, braille, box diagonals and corner triangles. Font glyphs for these leave seams or are missing."
+    upstream_status: not-submitted
+    drop_when: Upstream herdr-app draws these ranges as sprites.
+    scope:
+      - src/sprites.rs
+  - name: synthetic-italic
+    kind: source
+    purpose: >-
+      Slant the regular face by tan(15 degrees), as Ghostty does, when a font family
+      has no italic face (FiraCode), so italic text reads as italic instead of upright.
+    upstream_status: not-submitted
+    drop_when: GPUI or Herdr synthesizes italics for families without an italic face.
+    scope:
+      - vendor/gpui-pre-macos/src/text_system.rs
+  - name: macos-26-titlebar
+    kind: source
+    purpose: "Fit the macOS 26 titlebar: hide the background macOS 26 and later draw over the transparent titlebar, as Ghostty does, and leave room for the wider-spaced window buttons at any zoom."
+    upstream_status: not-submitted
+    drop_when: >-
+      GPUI or Herdr hides the macOS 26 titlebar background and sizes the
+      window-button gap for macOS 26 itself.
+    scope:
+      - vendor/gpui-pre-macos/src/window.rs
+      - src/window.rs
+      - defaults/mods/tabs/main.js
+      - defaults/mods/terminals-bar/main.js
+      - src/mods/render_tests.rs
+      - defaults/mods/workspace-chrome/main.js
+      - defaults/mods/agents/main.js
+  - name: kitty-placeholders
+    kind: source
+    purpose: "Draw kitty images placed with Unicode placeholders (Claude Code images): bump vendored Ghostty to 9fc5ec6b, which resolves placeholders in the render state, build it with Zig 0.17, and draw every image from the render state list."
+    upstream_status: not-submitted
+    drop_when: >-
+      Upstream herdr-app draws images from a Ghostty render state that resolves
+      placeholders.
+    scope:
+      - vendor/ghostty
+      - crates/ghostty-sys/build.rs
+      - src/vt.rs
+      - src/terminal.rs
+      - README.md
+      - licenses/inventory.json
+      - THIRD-PARTY-NOTICES
+  - name: kitty-file-media
+    kind: source
+    purpose: >-
+      Accept kitty images sent by path, temporary file or shared memory, as Ghostty
+      does, from programs on this machine (Claude Code sends previews by path); programs
+      on other machines send pixels.
+    upstream_status: not-submitted
+    drop_when: >-
+      Upstream herdr-app enables the libghostty-vt kitty file, temporary file and
+      shared memory media.
+    scope:
+      - src/vt.rs
+      - src/terminal.rs
+  - name: kitty-image-release
+    kind: source
+    purpose: >-
+      Free the GPU texture of a kitty image the terminal no longer shows, so images
+      scrolling past do not grow memory without bound.
+    upstream_status: not-submitted
+    drop_when: >-
+      Upstream herdr-app releases kitty image textures from the GPUI atlas when it
+      drops them from its cache.
+    scope:
+      - src/terminal.rs
+      - src/vt.rs
+  - name: fork-identity
+    kind: source
+    purpose: "Run beside Herdr without sharing anything: the fork has its own home, window app id and herdr-core session by default."
+    upstream_status: not-submitted
+    drop_when: The fork stops shipping as a separate app beside Herdr.
+    scope:
+      - src/mods.rs
+      - src/main.rs
+      - src/setup.rs
+      - src/SKILL.md
+      - src/window.rs
+      - docs/security.md
+      - docs/mods.md
+      - defaults/AGENTS.md
+      - defaults/herdr.d.ts
+      - defaults/frame/welcome/main.js
+      - README.md
+      - Cargo.toml
+      - tests/commands.rs
+      - tests/skill.rs
+      - src/control.rs
+      - src/core_bin/cli_link.rs
+      - THIRD-PARTY-NOTICES
+      - scripts/docs.ts
+      - scripts/docs.test.ts
+      - docs/commands.md
+      - docs/vsh/**
+  - name: core-path-order
+    kind: source
+    purpose: >-
+      Keep the person's PATH order when the core is already the first one found, so
+      wrappers and shims ahead of the core's folder (such as a claude launcher in front
+      of ~/.local/bin) still run in Herdr terminals.
+    upstream_status: not-submitted
+    drop_when: >-
+      Upstream stops moving the core's folder ahead of PATH entries that do not hold
+      another core.
+    scope:
+      - src/core_bin.rs
+  - name: terminal-find
+    kind: source
+    purpose: "Find in a terminal and its scrollback with cmd+f (ctrl+shift+f elsewhere), through libghostty search: upstream PR #195 by dgurinovich, carried until it merges."
+    upstream_status: submitted
+    drop_when: "herdrdev/herdr-app merges PR #195 or ships its own terminal find."
+    scope:
+      - src/**
+      - defaults/**
+      - docs/commands.md
+  - name: fork-ci
+    kind: tooling
+    purpose: "Run only the fork's own CI: the upstream test workflow on pushes to downstream and pull requests, on standard GitHub-hosted runners, with no release publishing."
+    upstream_status: "inappropriate: downstream-only CI policy"
+    drop_when: The fork is retired.
+    scope:
+      - .github/workflows/**
+  - name: fork-release
+    kind: tooling
+    purpose: >-
+      Publish Herdr VSH as a signed, notarized macOS installer package on GitHub
+      Releases from a vsh-v* tag, without upstream updates, telemetry or feedback.
+    upstream_status: not-submitted
+    drop_when: >-
+      Herdr VSH stops shipping its own builds, or the rebranded app takes over
+      releases.
+    scope:
+      - .github/workflows/release.yml
+      - scripts/vsh-package-macos
+      - packaging/vsh/**
+  - name: fork-tooling
+    kind: tooling
+    purpose: Own fork policy, generated evidence, and integration configuration.
+    upstream_status: "inappropriate: downstream-only fork maintenance"
+    drop_when: The downstream fork is retired.
+    scope:
+      - patches/fork.yaml
+      - PATCHES.md
+      - patches/downstream/**
+      - mise.toml
+      - mise.lock
+disabled_patches: []
+history:
+  - kind: rebase
+    target:
+      kind: tag
+      selector: refs/tags/v0.1.11
+      commit: e12fd31866f33cb613922d0b33ea506e6f23ce3c
+    recovery:
+      tag: forkctl/recovery/1793489369880849000-d573c3fdb410
+      tag_object: e53183886cc93ffd0638f4831f6db997f69609b1
+      old_base: 3e32d75e7aa2327d7b1f89caf3d5dafd1f44f1b2
+      old_tip: d573c3fdb41057a23db472992aa86eba8c1b209a
+    dropped:
+      - patch:
+          name: mouse-hover
+          kind: source
+          purpose: >-
+            Report pointer motion without a pressed button to programs that enable
+            any-event mouse tracking (mode 1003), as Ghostty does, so hover reaches TUIs; the encoder
+            filters by mode, and motion within one cell is dropped except in SGR-pixels mode.
+          upstream_status: not-submitted
+          drop_when: Upstream herdr-app forwards buttonless motion to the mouse encoder.
+          scope:
+            - src/terminal.rs
+            - src/vt.rs
+        commit: fad2440d2db357dc2d500616accf892aab355d63
+contracts:
+  allow_base: []
+  required_text: []
