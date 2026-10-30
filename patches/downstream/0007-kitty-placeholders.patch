@@ -7,13 +7,13 @@ Upstream-Status: not-submitted
 Drop-When: Upstream herdr-app draws images from a Ghostty render state that resolves placeholders.
 ---
  README.md                   |    2 -
- THIRD-PARTY-NOTICES         |   16 +++---
+ THIRD-PARTY-NOTICES         |   16 ++---
  crates/ghostty-sys/build.rs |    2 -
  licenses/inventory.json     |    6 +-
  src/terminal.rs             |   15 +++--
- src/vt.rs                   |  123 +++++++++++++++++++++++++++++++------------
+ src/vt.rs                   |  142 +++++++++++++++++++++++++++++++++----------
  vendor/ghostty              |    2 -
- 7 files changed, 113 insertions(+), 53 deletions(-)
+ 7 files changed, 132 insertions(+), 53 deletions(-)
 
 diff --git a/README.md b/README.md
 index 6af61fd8931db4ff07d0dd05e2b176359f332977..2571cbcbd9998fd4c76b00bb1f1d2828b5927cec 100644
@@ -165,7 +165,7 @@ index a0ba4b41a12daa0f7d4d2914b672143c03306322..a5d1ee044fcabcb0cc75e4ae57f9a3a7
          }
      };
 diff --git a/src/vt.rs b/src/vt.rs
-index b9aac4ef543f063d648e644a18fe1023d743f651..19e73d18d06cc4b93aed52755786b0d8500230ce 100644
+index b9aac4ef543f063d648e644a18fe1023d743f651..54001278e046d263240ccbbbe72ae8dec2342fc5 100644
 --- a/src/vt.rs
 +++ b/src/vt.rs
 @@ -131,10 +131,14 @@ pub struct Placement {
@@ -200,7 +200,7 @@ index b9aac4ef543f063d648e644a18fe1023d743f651..19e73d18d06cc4b93aed52755786b0d8
                  theme: theme(),
                  base_palette: colors.palette,
                  gesture,
-@@ -440,49 +447,66 @@ impl Vt {
+@@ -440,49 +447,71 @@ impl Vt {
          std::mem::take(&mut self.shared.replies)
      }
  
@@ -229,10 +229,6 @@ index b9aac4ef543f063d648e644a18fe1023d743f651..19e73d18d06cc4b93aed52755786b0d8
 -                    ghostty_kitty_graphics_placement_get(it, GHOSTTY_KITTY_GRAPHICS_PLACEMENT_DATA_IS_VIRTUAL, &mut virt as *mut _ as *mut c_void);
 -                    let img = ghostty_kitty_graphics_image(g, id);
 -                    if virt || img.is_null() {
--                        continue;
--                    }
--                    let mut info = GhosttyKittyGraphicsPlacementRenderInfo { size: std::mem::size_of::<GhosttyKittyGraphicsPlacementRenderInfo>(), ..Default::default() };
--                    if ghostty_kitty_graphics_placement_render_info(it, img, self.term, &mut info) != GHOSTTY_SUCCESS || !info.viewport_visible {
 +            if ghostty_render_state_get(self.shared.state, GHOSTTY_RENDER_STATE_DATA_IMAGE_ITERATOR, &mut it as *mut _ as *mut c_void) == GHOSTTY_SUCCESS {
 +                while ghostty_render_state_image_iterator_next(it) {
 +                    let get = |kind, out: *mut c_void| ghostty_render_state_image_get(it, kind, out) == GHOSTTY_SUCCESS;
@@ -240,6 +236,10 @@ index b9aac4ef543f063d648e644a18fe1023d743f651..19e73d18d06cc4b93aed52755786b0d8
 +                    if !get(GHOSTTY_RENDER_STATE_IMAGE_DATA_PROTOCOL, &mut protocol as *mut _ as *mut c_void) || protocol != GHOSTTY_IMAGE_PROTOCOL_KITTY {
                          continue;
                      }
+-                    let mut info = GhosttyKittyGraphicsPlacementRenderInfo { size: std::mem::size_of::<GhosttyKittyGraphicsPlacementRenderInfo>(), ..Default::default() };
+-                    if ghostty_kitty_graphics_placement_render_info(it, img, self.term, &mut info) != GHOSTTY_SUCCESS || !info.viewport_visible {
+-                        continue;
+-                    }
 -                    let mut generation = 0u64;
 -                    ghostty_kitty_graphics_image_get(img, GHOSTTY_KITTY_IMAGE_DATA_GENERATION, &mut generation as *mut _ as *mut c_void);
 -                    out.push(Placement {
@@ -279,20 +279,25 @@ index b9aac4ef543f063d648e644a18fe1023d743f651..19e73d18d06cc4b93aed52755786b0d8
 -        out.sort_by_key(|p| p.z);
 +        // A placeholder image comes one slice per row. Joined back into one
 +        // placement, it draws as a single image, with no seams between rows.
++        // libghostty rounds each slice's source and height on its own
++        // (graphics_unicode.zig renderPlacement), so neighbours can overlap or
++        // miss by a pixel: the joined slice spans first top to last bottom.
 +        let cell_h = self.cell_h;
 +        out.dedup_by(|next, prev| {
++            let prev_end = prev.offset[1] + prev.height;
++            let rows = prev_end.div_ceil(cell_h);
 +            let joins = next.image == prev.image
 +                && next.generation == prev.generation
 +                && (next.below_text, next.z) == (prev.below_text, prev.z)
 +                && (next.col, next.offset[0], next.width) == (prev.col, prev.offset[0], prev.width)
 +                && (next.source[0], next.source[2]) == (prev.source[0], prev.source[2])
-+                && next.source[1] == prev.source[1] + prev.source[3]
-+                && (prev.offset[1] + prev.height) % cell_h == 0
-+                && next.row == prev.row + ((prev.offset[1] + prev.height) / cell_h) as i32
++                && next.source[1].abs_diff(prev.source[1] + prev.source[3]) <= 1
++                && prev_end + 1 >= rows * cell_h
++                && next.row == prev.row + rows as i32
 +                && next.offset[1] == 0;
 +            if joins {
-+                prev.source[3] += next.source[3];
-+                prev.height += next.height;
++                prev.source[3] = next.source[1] + next.source[3] - prev.source[1];
++                prev.height = rows * cell_h + next.height - prev.offset[1];
 +            }
 +            joins
 +        });
@@ -300,7 +305,7 @@ index b9aac4ef543f063d648e644a18fe1023d743f651..19e73d18d06cc4b93aed52755786b0d8
          out
      }
  
-@@ -741,6 +765,7 @@ impl Vt {
+@@ -741,6 +770,7 @@ impl Vt {
          }
          self.cols = cols;
          self.rows = rows;
@@ -308,7 +313,7 @@ index b9aac4ef543f063d648e644a18fe1023d743f651..19e73d18d06cc4b93aed52755786b0d8
          unsafe { ghostty_terminal_resize(self.term, cols, rows, cell_w.max(1), cell_h.max(1)) };
      }
  
-@@ -971,6 +996,10 @@ impl Vt {
+@@ -971,6 +1001,10 @@ impl Vt {
                      ghostty_render_state_row_cells_get(c, GHOSTTY_RENDER_STATE_ROW_CELLS_DATA_GRAPHEMES_BUF, cps.as_mut_ptr() as *mut c_void);
                      text = cps.into_iter().filter_map(char::from_u32).collect();
                  }
@@ -319,7 +324,7 @@ index b9aac4ef543f063d648e644a18fe1023d743f651..19e73d18d06cc4b93aed52755786b0d8
              }
  
              // Contrast adjustment is opt-in; graphics always keep their colors.
-@@ -1346,6 +1375,7 @@ mod tests {
+@@ -1346,6 +1380,7 @@ mod tests {
          vt.resize(20, 5, 8, 16);
          // A 1x1 red PNG, transmitted and displayed, asking for a reply.
          vt.write(b"\x1b_Ga=T,f=100,i=7,q=0;iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4z8DwHwAFAAH/iZk9HQAAAABJRU5ErkJggg==\x1b\\");
@@ -327,7 +332,7 @@ index b9aac4ef543f063d648e644a18fe1023d743f651..19e73d18d06cc4b93aed52755786b0d8
          let p = vt.placements();
          assert_eq!(p.len(), 1, "{p:?}");
          assert_eq!((p[0].image, p[0].col, p[0].row), (7, 0, 0));
-@@ -1356,6 +1386,33 @@ mod tests {
+@@ -1356,6 +1391,47 @@ mod tests {
          assert!(reply.contains("i=7") && reply.contains("OK"), "{reply:?}");
      }
  
@@ -356,6 +361,20 @@ index b9aac4ef543f063d648e644a18fe1023d743f651..19e73d18d06cc4b93aed52755786b0d8
 +        let p = vt.placements();
 +        assert_eq!(p.len(), 1, "{p:?}");
 +        assert_eq!((p[0].col, p[0].row, p[0].height, p[0].source[3]), (3, 1, 30, 3));
++    }
++
++    #[test]
++    fn kitty_placeholder_rows_join_across_rounded_source_rows() {
++        let mut vt = Vt::new(10, 5);
++        vt.resize(10, 5, 10, 10);
++        // A 2x8 image over 2x3 cells: 8/3 source rows per cell row, so libghostty
++        // rounds each slice on its own (y 0, 3, 5; height 3 each) and they overlap.
++        vt.write(format!("\x1b_Ga=T,t=d,f=24,i=1,p=1,s=2,v=8,U=1,c=2,r=3,q=2;{}\x1b\\", "A".repeat(64)).as_bytes());
++        vt.write("\x1b[38;5;1;58;5;1m\x1b[2;4H\u{10EEEE}\u{305}\u{10EEEE}\u{305}\x1b[3;4H\u{10EEEE}\u{30D}\u{10EEEE}\u{30D}\x1b[4;4H\u{10EEEE}\u{30E}\u{10EEEE}\u{30E}".as_bytes());
++        vt.frame();
++        let p = vt.placements();
++        assert_eq!(p.len(), 1, "{p:?}");
++        assert_eq!((p[0].row, p[0].offset[1], p[0].height, p[0].source[1], p[0].source[3]), (1, 0, 30, 0, 8));
 +    }
 +
      #[test]

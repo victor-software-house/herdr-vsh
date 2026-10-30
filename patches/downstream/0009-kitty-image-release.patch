@@ -94,10 +94,10 @@ index a5d1ee044fcabcb0cc75e4ae57f9a3a730ae4a64..c9fcee824bc497806b28467477e92615
          }
      };
 diff --git a/src/vt.rs b/src/vt.rs
-index 196e32a9d90b0cc370ded63966f7c82148981ae4..246e5c490438e5708128e1dabfb5ad50f4483ac2 100644
+index 5c6b407fcf25da6ac0d7dd32aa24d267c48bb849..8f26e6790526b47a4f87710973173d3136e3c2f5 100644
 --- a/src/vt.rs
 +++ b/src/vt.rs
-@@ -518,6 +518,18 @@ impl Vt {
+@@ -523,6 +523,18 @@ impl Vt {
          out
      }
  
@@ -116,7 +116,7 @@ index 196e32a9d90b0cc370ded63966f7c82148981ae4..246e5c490438e5708128e1dabfb5ad50
      /// An image's pixels as BGRA (what GPUI uploads), cropped to `source`.
      pub fn image_bgra(&self, id: u32, source: [u32; 4]) -> Option<(u32, u32, Vec<u8>)> {
          unsafe {
-@@ -1410,6 +1422,18 @@ mod tests {
+@@ -1415,6 +1427,18 @@ mod tests {
          assert_eq!(vt.image_bgra(9, p[0].source).unwrap().2[..], [0, 0, 255, 255]);
      }
  

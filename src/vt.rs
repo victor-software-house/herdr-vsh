@@ -497,20 +497,25 @@ impl Vt {
         }
         // A placeholder image comes one slice per row. Joined back into one
         // placement, it draws as a single image, with no seams between rows.
+        // libghostty rounds each slice's source and height on its own
+        // (graphics_unicode.zig renderPlacement), so neighbours can overlap or
+        // miss by a pixel: the joined slice spans first top to last bottom.
         let cell_h = self.cell_h;
         out.dedup_by(|next, prev| {
+            let prev_end = prev.offset[1] + prev.height;
+            let rows = prev_end.div_ceil(cell_h);
             let joins = next.image == prev.image
                 && next.generation == prev.generation
                 && (next.below_text, next.z) == (prev.below_text, prev.z)
                 && (next.col, next.offset[0], next.width) == (prev.col, prev.offset[0], prev.width)
                 && (next.source[0], next.source[2]) == (prev.source[0], prev.source[2])
-                && next.source[1] == prev.source[1] + prev.source[3]
-                && (prev.offset[1] + prev.height) % cell_h == 0
-                && next.row == prev.row + ((prev.offset[1] + prev.height) / cell_h) as i32
+                && next.source[1].abs_diff(prev.source[1] + prev.source[3]) <= 1
+                && prev_end + 1 >= rows * cell_h
+                && next.row == prev.row + rows as i32
                 && next.offset[1] == 0;
             if joins {
-                prev.source[3] += next.source[3];
-                prev.height += next.height;
+                prev.source[3] = next.source[1] + next.source[3] - prev.source[1];
+                prev.height = rows * cell_h + next.height - prev.offset[1];
             }
             joins
         });
@@ -1459,6 +1464,20 @@ mod tests {
         let p = vt.placements();
         assert_eq!(p.len(), 1, "{p:?}");
         assert_eq!((p[0].col, p[0].row, p[0].height, p[0].source[3]), (3, 1, 30, 3));
+    }
+
+    #[test]
+    fn kitty_placeholder_rows_join_across_rounded_source_rows() {
+        let mut vt = Vt::new(10, 5);
+        vt.resize(10, 5, 10, 10);
+        // A 2x8 image over 2x3 cells: 8/3 source rows per cell row, so libghostty
+        // rounds each slice on its own (y 0, 3, 5; height 3 each) and they overlap.
+        vt.write(format!("\x1b_Ga=T,t=d,f=24,i=1,p=1,s=2,v=8,U=1,c=2,r=3,q=2;{}\x1b\\", "A".repeat(64)).as_bytes());
+        vt.write("\x1b[38;5;1;58;5;1m\x1b[2;4H\u{10EEEE}\u{305}\u{10EEEE}\u{305}\x1b[3;4H\u{10EEEE}\u{30D}\u{10EEEE}\u{30D}\x1b[4;4H\u{10EEEE}\u{30E}\u{10EEEE}\u{30E}".as_bytes());
+        vt.frame();
+        let p = vt.placements();
+        assert_eq!(p.len(), 1, "{p:?}");
+        assert_eq!((p[0].row, p[0].offset[1], p[0].height, p[0].source[1], p[0].source[3]), (1, 0, 30, 0, 8));
     }
 
     #[test]
