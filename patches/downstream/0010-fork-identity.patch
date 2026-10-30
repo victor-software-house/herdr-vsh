@@ -7,7 +7,7 @@ Upstream-Status: not-submitted
 Drop-When: The fork stops shipping as a separate app beside Herdr.
 ---
  Cargo.toml                     |    5 ++++
- README.md                      |   36 +++++++++++++++++++++++++++++
+ README.md                      |   46 +++++++++++++++++++++++++++++++++++++
  THIRD-PARTY-NOTICES            |    2 +-
  defaults/AGENTS.md             |   50 ++++++++++++++++++++--------------------
  defaults/frame/welcome/main.js |    2 +-
@@ -26,7 +26,7 @@ Drop-When: The fork stops shipping as a separate app beside Herdr.
  src/window.rs                  |    2 +-
  tests/commands.rs              |    2 +-
  tests/skill.rs                 |    4 ++-
- 20 files changed, 176 insertions(+), 125 deletions(-)
+ 20 files changed, 186 insertions(+), 125 deletions(-)
 
 diff --git a/Cargo.toml b/Cargo.toml
 index dedd9da501433eb88e79056ea31fd415e10f39e1..cb448f46956adbbcf150d685ecf4a0b2f3b97264 100644
@@ -45,10 +45,10 @@ index dedd9da501433eb88e79056ea31fd415e10f39e1..cb448f46956adbbcf150d685ecf4a0b2
  name = "shot_pixels"
  path = "tests/shot_pixels.rs"
 diff --git a/README.md b/README.md
-index 2571cbcbd9998fd4c76b00bb1f1d2828b5927cec..2ad0ac19602e9af3bc7b15e520f503369b168177 100644
+index 2571cbcbd9998fd4c76b00bb1f1d2828b5927cec..07a800463b57ec43bdb10b76cf962a668ccaddb6 100644
 --- a/README.md
 +++ b/README.md
-@@ -1,3 +1,39 @@
+@@ -1,3 +1,49 @@
 +# Herdr VSH
 +
 +Herdr VSH is a build of [Herdr](https://github.com/herdrdev/herdr-app) by Victor Software House.
@@ -56,11 +56,21 @@ index 2571cbcbd9998fd4c76b00bb1f1d2828b5927cec..2ad0ac19602e9af3bc7b15e520f50336
 +
 +## Install Herdr VSH
 +
-+On an Apple Silicon Mac with macOS 26 or newer:
++[![Download Herdr VSH for macOS](https://img.shields.io/badge/Download-Herdr--VSH.pkg-2b2b2b?style=for-the-badge&logo=apple&logoColor=white)](https://github.com/victor-software-house/herdr-app/releases/latest/download/Herdr-VSH.pkg)
 +
-+1. Download the zip from the latest [release](https://github.com/victor-software-house/herdr-app/releases/latest).
-+2. Unzip it and move `Herdr VSH.app` to Applications.
-+3. Open it. It is signed with a Developer ID and notarized by Apple.
++For Apple Silicon Macs with macOS 26 or newer.
++Open `Herdr-VSH.pkg` and it installs `Herdr VSH.app` in Applications, replacing any earlier copy.
++The app and the package are signed with a Developer ID and notarized by Apple.
++
++With Homebrew:
++
++```sh
++brew install --cask victor-software-house/forks/herdr-vsh
++```
++
++`brew upgrade --cask herdr-vsh` installs a newer release.
++Herdr VSH puts its `herdr-vsh` command in `~/.local/bin` the first time it opens.
++[All releases](https://github.com/victor-software-house/herdr-app/releases).
 +
 +Herdr VSH runs beside Herdr and shares nothing with it:
 +

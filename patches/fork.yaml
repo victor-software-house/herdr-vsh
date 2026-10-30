@@ -165,15 +165,15 @@ patches:
   - name: fork-release
     kind: tooling
     purpose: >-
-      Publish a signed, notarized macOS build of Herdr VSH to GitHub Releases from a
-      vsh-v* tag, without upstream updates, telemetry or feedback.
+      Publish Herdr VSH as a signed, notarized macOS installer package on GitHub
+      Releases from a vsh-v* tag, without upstream updates, telemetry or feedback.
     upstream_status: not-submitted
     drop_when: >-
       Herdr VSH stops shipping its own builds, or the rebranded app takes over
       releases.
     scope:
       - .github/workflows/release.yml
-      - scripts/fork-release-macos
+      - scripts/vsh-package-macos
   - name: fork-tooling
     kind: tooling
     purpose: Own fork policy, generated evidence, and integration configuration.

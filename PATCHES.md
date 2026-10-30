@@ -17,7 +17,7 @@ Base: `refs/tags/v0.1.9` (`3e32d75e7aa2327d7b1f89caf3d5dafd1f44f1b2`)
 | 9 | `kitty-image-release` | source | Free the GPU texture of a kitty image the terminal no longer shows, so images scrolling past do not grow memory without bound. | not-submitted | Upstream herdr-app releases kitty image textures from the GPUI atlas when it drops them from its cache. |
 | 10 | `fork-identity` | source | Run beside Herdr without sharing anything: the fork has its own home, window app id and herdr-core session by default. | not-submitted | The fork stops shipping as a separate app beside Herdr. |
 | 11 | `fork-ci` | tooling | Run only the fork's own CI: the upstream test workflow on pushes to downstream and pull requests, on standard GitHub-hosted runners, with no release publishing. | inappropriate: downstream-only CI policy | The fork is retired. |
-| 12 | `fork-release` | tooling | Publish a signed, notarized macOS build of Herdr VSH to GitHub Releases from a vsh-v* tag, without upstream updates, telemetry or feedback. | not-submitted | Herdr VSH stops shipping its own builds, or the rebranded app takes over releases. |
+| 12 | `fork-release` | tooling | Publish Herdr VSH as a signed, notarized macOS installer package on GitHub Releases from a vsh-v* tag, without upstream updates, telemetry or feedback. | not-submitted | Herdr VSH stops shipping its own builds, or the rebranded app takes over releases. |
 | 13 | `fork-tooling` | tooling | Own fork policy, generated evidence, and integration configuration. | inappropriate: downstream-only fork maintenance | The downstream fork is retired. |
 
 ## Disabled
