@@ -1,14 +1,15 @@
-# Build and test every supported platform; release.yml handles packaging.
+# Build and test every supported platform. The fork publishes no releases.
 #
-# Rust caches use one pinned toolchain and only master pushes save, so PR
+# Rust caches use one pinned toolchain and only downstream pushes save, so PR
 # caches can't evict the ones everybody restores. setup-zig caches separately.
 name: ci
 
 on:
   push:
-    branches: [master]
+    branches: [downstream]
   # No paths-ignore here: CI is required to merge, so every PR needs it.
   pull_request:
+    branches: [downstream]
 
 permissions:
   contents: read
@@ -23,7 +24,7 @@ env:
   # File/line backtraces without full debug info: smaller target, faster cache.
   CARGO_PROFILE_DEV_DEBUG: "1"
   CARGO_PROFILE_TEST_DEBUG: "1"
-  SAVE_CACHES: ${{ github.event_name == 'push' && github.ref == 'refs/heads/master' }}
+  SAVE_CACHES: ${{ github.event_name == 'push' && github.ref == 'refs/heads/downstream' }}
 
 jobs:
   platform-tests:
@@ -50,7 +51,7 @@ jobs:
           toolchain: ${{ env.RUST_TOOLCHAIN }}
       - uses: mlugg/setup-zig@d1434d08867e3ee9daa34448df10607b98908d29 # v2.2.1
         with:
-          version: 0.16.0
+          version: 0.17.0
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           key: ${{ matrix.platform }}-dev
