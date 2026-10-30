@@ -1,0 +1,121 @@
+synthetic-italic
+
+From: Victor Araújo <victor@victor-software-house.com>
+
+Downstream-Reason: Slant the regular face by tan(15 degrees), as Ghostty does, when a font family has no italic face (FiraCode), so italic text reads as italic instead of upright.
+Upstream-Status: not-submitted
+Drop-When: GPUI or Herdr synthesizes italics for families without an italic face.
+---
+ vendor/gpui-pre-macos/src/text_system.rs |   60 +++++++++++++++++++++++++++++-
+ 1 file changed, 57 insertions(+), 3 deletions(-)
+
+diff --git a/vendor/gpui-pre-macos/src/text_system.rs b/vendor/gpui-pre-macos/src/text_system.rs
+index fbc48864ce5216e03b93437fa85943d7e6a7dcb1..c2739d157fff24cbaa28fcae49aa8c8eb7c91865 100644
+--- a/vendor/gpui-pre-macos/src/text_system.rs
++++ b/vendor/gpui-pre-macos/src/text_system.rs
+@@ -13,12 +13,13 @@ use core_graphics::{
+     color_space::CGColorSpace,
+     context::{CGContext, CGTextDrawingMode},
+     display::CGPoint,
++    geometry::CGAffineTransform,
+ };
+ use core_text::{
+-    font::CTFont,
++    font::{CTFont, CTFontRef},
+     font_collection::CTFontCollectionRef,
+     font_descriptor::{
+-        CTFontDescriptor, kCTFontSlantTrait, kCTFontSymbolicTrait, kCTFontWeightTrait,
++        CTFontDescriptor, CTFontDescriptorRef, kCTFontSlantTrait, kCTFontSymbolicTrait, kCTFontWeightTrait,
+         kCTFontWidthTrait,
+     },
+     line::CTLine,
+@@ -71,6 +72,23 @@ struct MacTextSystemState {
+     font_ids_by_postscript_name: HashMap<String, FontId>,
+     font_ids_by_font_key: HashMap<FontKey, SmallVec<[FontId; 4]>>,
+     postscript_names_by_font_id: HashMap<FontId, String>,
++    /// HERDR: the slanted stand-in for each upright face asked for in italic.
++    synthetic_italics: HashMap<FontId, FontId>,
++}
++
++// HERDR: a regular face slanted by tan(15 degrees), Ghostty's synthetic
++// italic, for families with no italic face (FiraCode).
++const ITALIC_SKEW: CGAffineTransform =
++    CGAffineTransform { a: 1.0, b: 0.0, c: 0.267949, d: 1.0, tx: 0.0, ty: 0.0 };
++
++unsafe extern "C" {
++    fn CTFontCreateCopyWithAttributes(
++        font: CTFontRef,
++        size: CGFloat,
++        matrix: *const CGAffineTransform,
++        attributes: CTFontDescriptorRef,
++    ) -> CTFontRef;
++    fn CTFontGetMatrix(font: CTFontRef) -> CGAffineTransform;
+ }
+ 
+ impl MacTextSystem {
+@@ -84,6 +102,7 @@ impl MacTextSystem {
+             font_ids_by_postscript_name: HashMap::default(),
+             font_ids_by_font_key: HashMap::default(),
+             postscript_names_by_font_id: HashMap::default(),
++            synthetic_italics: HashMap::default(),
+         }))
+     }
+ }
+@@ -168,6 +187,13 @@ impl PlatformTextSystem for MacTextSystem {
+             )?;
+ 
+             let font_id = candidates[ix];
++            let font_id = if font.style != FontStyle::Normal
++                && candidate_properties[ix].style == FontkitStyle::Normal
++            {
++                lock.synthetic_italic(font_id)
++            } else {
++                font_id
++            };
+             lock.font_selections.insert(font.clone(), font_id);
+             Ok(font_id)
+         }
+@@ -382,6 +408,29 @@ impl MacTextSystemState {
+         Ok(font_ids)
+     }
+ 
++    /// HERDR: the upright face slanted, registered once as a font of its own.
++    fn synthetic_italic(&mut self, upright: FontId) -> FontId {
++        if let Some(&slanted) = self.synthetic_italics.get(&upright) {
++            return slanted;
++        }
++        let native = self.fonts[upright.0].native_font();
++        let slanted = unsafe {
++            CTFont::wrap_under_create_rule(CTFontCreateCopyWithAttributes(
++                native.as_concrete_TypeRef(),
++                0.0,
++                &ITALIC_SKEW,
++                std::ptr::null(),
++            ))
++        };
++        let font_id = FontId(self.fonts.len());
++        self.fonts.push(unsafe { FontKitFont::from_native_font(&slanted) });
++        if let Some(name) = self.postscript_names_by_font_id.get(&upright).cloned() {
++            self.postscript_names_by_font_id.insert(font_id, name);
++        }
++        self.synthetic_italics.insert(upright, font_id);
++        font_id
++    }
++
+     fn advance(&self, font_id: FontId, glyph_id: GlyphId) -> Result<Size<f32>> {
+         Ok(size_from_vector2f(
+             self.fonts[font_id.0].advance(glyph_id.0)?,
+@@ -584,7 +633,12 @@ impl MacTextSystemState {
+                     .downcast::<CTFont>()
+                     .unwrap()
+             };
+-            let font_id = self.id_for_native_font(font);
++            let font_id = self.id_for_native_font(font.clone());
++            // HERDR: CoreText hands the slanted face back under the upright one's PostScript name.
++            let font_id = match self.synthetic_italics.get(&font_id) {
++                Some(&slanted) if unsafe { CTFontGetMatrix(font.as_concrete_TypeRef()) }.c != 0.0 => slanted,
++                _ => font_id,
++            };
+ 
+             let glyphs = match runs.last_mut() {
+                 Some(run) if run.font_id == font_id => &mut run.glyphs,
