@@ -39,14 +39,24 @@ pub fn path() -> PathBuf {
 pub fn use_core(bin: PathBuf) {
     if let Some(dir) = bin.parent() {
         let path = std::env::var_os("PATH").unwrap_or_default();
-        let mut dirs: Vec<PathBuf> = vec![dir.to_path_buf()];
-        dirs.extend(std::env::split_paths(&path).filter(|d| d != dir));
-        if let Ok(joined) = std::env::join_paths(dirs) {
+        if let Some(joined) = path_with_core(&path, dir, |d| names(d).iter().any(|n| n.is_file())) {
             // SAFETY: set once at start, before other threads read the environment.
             unsafe { std::env::set_var("PATH", joined) };
         }
     }
     let _ = BIN.set(bin);
+}
+
+/// PATH with the core's folder first, or None when PATH already finds that
+/// core first: the person's order stays, so wrappers ahead of the core's
+/// folder (a launcher shim in front of ~/.local/bin) still run.
+fn path_with_core(path: &std::ffi::OsStr, dir: &Path, has_core: impl Fn(&Path) -> bool) -> Option<std::ffi::OsString> {
+    if dirs_on(path).find(|d| has_core(d)).is_some_and(|d| d == dir) {
+        return None;
+    }
+    let mut dirs: Vec<PathBuf> = vec![dir.to_path_buf()];
+    dirs.extend(dirs_on(path).filter(|d| d != dir));
+    std::env::join_paths(dirs).ok()
 }
 
 /// Finder and Dock launches don't inherit the person's shell PATH.
@@ -229,6 +239,17 @@ mod tests {
         assert_eq!(std::env::split_paths(&merged).collect::<Vec<_>>(), ["/custom/bin", "/opt/homebrew/bin", "/usr/bin", "/home/test/.local/bin", "/bin"].map(PathBuf::from));
         let fallback = merged_path(None, &usual, &current).unwrap();
         assert_eq!(std::env::split_paths(&fallback).collect::<Vec<_>>(), ["/home/test/.local/bin", "/opt/homebrew/bin", "/usr/bin", "/bin"].map(PathBuf::from));
+    }
+
+    #[test]
+    fn core_folder_moves_first_only_when_another_core_comes_before_it() {
+        let core = Path::new("/home/test/.local/bin");
+        let path = std::env::join_paths(["/home/test/shims", "/home/test/.local/bin", "/usr/bin"]).unwrap();
+        assert_eq!(path_with_core(&path, core, |d| d == core), None);
+        let shadowed = path_with_core(&path, core, |d| d == core || d == Path::new("/home/test/shims")).unwrap();
+        assert_eq!(std::env::split_paths(&shadowed).collect::<Vec<_>>(), ["/home/test/.local/bin", "/home/test/shims", "/usr/bin"].map(PathBuf::from));
+        let missing = path_with_core(&std::env::join_paths(["/usr/bin"]).unwrap(), core, |_| false).unwrap();
+        assert_eq!(std::env::split_paths(&missing).collect::<Vec<_>>(), ["/home/test/.local/bin", "/usr/bin"].map(PathBuf::from));
     }
 
     // Fakes the binary with a shell script.
