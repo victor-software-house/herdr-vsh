@@ -1,0 +1,14 @@
+#!/bin/sh
+# Runs as root before Herdr VSH.app is replaced: asks a running copy to quit,
+# so the new one starts clean. Its terminals keep running in herdr-core.
+user=$(stat -f %Su /dev/console)
+[ "$user" = root ] && exit 0
+pgrep -qxu "$user" herdr-vsh || exit 0
+launchctl asuser "$(id -u "$user")" sudo -u "$user" \
+  osascript -e 'tell application id "com.victor-software-house.herdr" to quit' >/dev/null 2>&1
+i=0
+while pgrep -qxu "$user" herdr-vsh && [ $i -lt 20 ]; do
+  sleep 0.5
+  i=$((i + 1))
+done
+exit 0
