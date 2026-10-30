@@ -523,6 +523,18 @@ impl Vt {
         out
     }
 
+    /// A stored image's generation, which changes whenever its pixels do; None once it's deleted.
+    pub fn image_generation(&self, id: u32) -> Option<u64> {
+        unsafe {
+            let mut g: GhosttyKittyGraphics = std::ptr::null_mut();
+            ghostty_terminal_get(self.term, GHOSTTY_TERMINAL_DATA_KITTY_GRAPHICS, &mut g as *mut _ as *mut c_void);
+            let img = (!g.is_null()).then(|| ghostty_kitty_graphics_image(g, id)).filter(|i| !i.is_null())?;
+            let mut generation = 0u64;
+            ghostty_kitty_graphics_image_get(img, GHOSTTY_KITTY_IMAGE_DATA_GENERATION, &mut generation as *mut _ as *mut c_void);
+            (generation != 0).then_some(generation)
+        }
+    }
+
     /// An image's pixels as BGRA (what GPUI uploads), cropped to `source`.
     pub fn image_bgra(&self, id: u32, source: [u32; 4]) -> Option<(u32, u32, Vec<u8>)> {
         unsafe {
@@ -1413,6 +1425,18 @@ mod tests {
         std::fs::remove_file(&path).unwrap();
         assert_eq!(p.len(), 1, "{p:?}");
         assert_eq!(vt.image_bgra(9, p[0].source).unwrap().2[..], [0, 0, 255, 255]);
+    }
+
+    #[test]
+    fn kitty_image_generation_follows_replacement_and_deletion() {
+        let mut vt = Vt::new(10, 5);
+        let send = b"\x1b_Ga=t,t=d,f=24,i=4,s=1,v=1,q=2;////\x1b\\";
+        vt.write(send);
+        let first = vt.image_generation(4).unwrap();
+        vt.write(send);
+        assert_ne!(vt.image_generation(4), Some(first), "new pixels, new generation");
+        vt.write(b"\x1b_Ga=d,d=I,i=4,q=2\x1b\\");
+        assert_eq!(vt.image_generation(4), None);
     }
 
     #[test]
