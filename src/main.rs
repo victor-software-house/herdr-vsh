@@ -39,28 +39,29 @@ mod window;
 use gpui::*;
 
 const HELP: &str = "\
-herdr-app: the Herdr desktop app. With no arguments it opens the window.
+herdr-vsh: Herdr VSH, a build of the Herdr desktop app. With no arguments it opens the window.
 
 Usage:
-  herdr-app                        open the window
-  herdr-app ls                     spaces, their tabs and terminals, in the open window
-  herdr-app do <command> [args]    run a command: --name api --argv '[\"pi\"]', or one JSON object
-  herdr-app feedback <text>        draft feedback for the person to review and send
-  herdr-app commands               every command, its arguments, what it does
-  herdr-app status                 what the window shows, and any errors
-  herdr-app shot [file.png]        save the last window frame (default: herdr-shot.png)
-  herdr-app check <mod folder>     load a mod once and report what's wrong
-  herdr-app --skill                Agent Skill: driving the window, and where hc fits
-  herdr-app --version
+  herdr-vsh                        open the window
+  herdr-vsh ls                     spaces, their tabs and terminals, in the open window
+  herdr-vsh do <command> [args]    run a command: --name api --argv '[\"pi\"]', or one JSON object
+  herdr-vsh feedback <text>        draft feedback for the person to review and send
+  herdr-vsh commands               every command, its arguments, what it does
+  herdr-vsh status                 what the window shows, and any errors
+  herdr-vsh shot [file.png]        save the last window frame (default: herdr-shot.png)
+  herdr-vsh check <mod folder>     load a mod once and report what's wrong
+  herdr-vsh --skill                Agent Skill: driving the window, and where hc fits
+  herdr-vsh --version
 
 The terminals run in herdr-core (`hc`), which keeps them alive when the
 window closes. `hc --help`: start, read, wait on and talk to terminals and
 agents. The app shows them and arranges them in spaces and tabs.
 
-Home: ~/.config/herdr-app (HERDR_APP_HOME picks another).
+Home: ~/.config/herdr-vsh (HERDR_APP_HOME picks another). Its terminals
+run in their own herdr-core session, herdr-vsh (HC_SESSION picks another).
 ";
 
-/// A Windows window app has no console: answers to `herdr-app ls` and the
+/// A Windows window app has no console: answers to `herdr-vsh ls` and the
 /// like go to the terminal it was started from. Output already piped (agents,
 /// scripts) keeps its pipes.
 #[cfg(windows)]
@@ -74,12 +75,17 @@ fn attach_console() {
 }
 
 fn main() {
+    // Herdr VSH keeps its terminals in its own core session, apart from Herdr's.
+    if std::env::var_os("HC_SESSION").is_none_or(|s| s.is_empty()) {
+        // SAFETY: first thing in main, before any other thread reads the environment.
+        unsafe { std::env::set_var("HC_SESSION", mods::APP_ID) };
+    }
     let args: Vec<String> = std::env::args().collect();
     #[cfg(windows)]
     if args.len() > 1 {
         attach_console();
     }
-    // `herdr-app check <mod>` / `herdr-app types <mod>`: gpui-shell's own checker, with Herdr's module installed.
+    // `herdr-vsh check <mod>` / `herdr-vsh types <mod>`: gpui-shell's own checker, with Herdr's module installed.
     if matches!(args.get(1).map(String::as_str), Some("check" | "types")) {
         mods::install_policy();
         gpui_shell::host::main_with_components(gpui_shell::FrozenComponentRegistry::default());
@@ -95,9 +101,9 @@ fn main() {
         None => {}
         Some("-h" | "--help" | "help") => return print!("{HELP}"),
         Some("--skill") => return print!("{}", include_str!("SKILL.md")),
-        Some("-V" | "--version" | "version") => return println!("herdr-app {}", env!("CARGO_PKG_VERSION")),
+        Some("-V" | "--version" | "version") => return println!("herdr-vsh {}", env!("CARGO_PKG_VERSION")),
         Some(other) => {
-            eprint!("herdr-app: unknown argument {other:?}\n\n{HELP}");
+            eprint!("herdr-vsh: unknown argument {other:?}\n\n{HELP}");
             std::process::exit(2);
         }
     }
@@ -129,7 +135,7 @@ fn main() {
                 // One that can't serve this app gets the screen that fixes it.
                 Ok(core) => hc::check(&core.hello).map(|()| core).map_err(setup::Need::Fix),
                 Err(e) => {
-                    eprintln!("herdr-app: {e:#}");
+                    eprintln!("herdr-vsh: {e:#}");
                     Err(setup::Need::Install)
                 }
             }
@@ -144,7 +150,7 @@ fn main() {
     telemetry::start(settings::telemetry_setting(&person));
     bench::start();
     if let Err(e) = mods::write_workspace() {
-        eprintln!("herdr-app: cannot write {}: {e}", mods::app_dir().display());
+        eprintln!("herdr-vsh: cannot write {}: {e}", mods::app_dir().display());
     }
 
     gpui_platform::application()
@@ -212,7 +218,7 @@ pub fn open_main(core: std::sync::Arc<hc::Core>, requests: async_channel::Receiv
                 }),
                 app_owns_titlebar_drag: cfg!(target_os = "macos"),
                 // Herdr Dev and other side-by-side builds get their own dock icon.
-                app_id: Some(std::env::var("HERDR_APP_ID").ok().filter(|s| !s.is_empty()).unwrap_or_else(|| "herdr-app".into())),
+                app_id: Some(std::env::var("HERDR_APP_ID").ok().filter(|s| !s.is_empty()).unwrap_or_else(|| mods::APP_ID.into())),
                 ..Default::default()
             };
             cx.open_window(options, |window, cx| cx.new(|cx| window::AppWindow::new(core, requests, window, cx)))
