@@ -31,8 +31,9 @@ use std::time::{Duration, Instant, SystemTime};
 const HEADER_HEIGHT: f32 = 30.0;
 const HANDLE: f32 = 6.0;
 
-// The three native buttons plus their trailing breathing room (also used by the tabs mod).
-const TRAFFIC_LIGHT_WIDTH: f32 = 64.0;
+// The three native buttons plus their trailing breathing room (also used by the tabs and terminals-bar mods).
+// macOS 26 spaces the 14 px buttons 9 px apart: 60 px of buttons, then 10 px of room.
+const TRAFFIC_LIGHT_WIDTH: f32 = 70.0;
 
 fn traffic_light_divider_inset(n: &Node, axis: Axis, index: usize, macos: bool, zoom: f32) -> f32 {
     if !macos || axis != Axis::Row || n.titlebar != Some(crate::layout::Titlebar::Layout) {

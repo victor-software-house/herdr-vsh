@@ -719,7 +719,35 @@ struct MacWindowState {
 }
 
 impl MacWindowState {
+    /// HERDR: macOS 26 and later draw a titlebar background over full-size content even
+    /// when the titlebar is transparent. Hide it, as Ghostty does
+    /// (`TransparentTitlebarTerminalWindow.swift`); AppKit can restore it, so this runs
+    /// on every traffic light layout pass.
+    fn hide_titlebar_background(&self) {
+        if !self.transparent_titlebar
+            || !is_macos_version_at_least(NSOperatingSystemVersion::new(26, 0, 0))
+        {
+            return;
+        }
+        fn find(view: &Objc2NSView) -> Option<Retained<Objc2NSView>> {
+            view.subviews().iter().find_map(|sub| {
+                if sub.class().name() == c"NSTitlebarBackgroundView" {
+                    Some(sub)
+                } else {
+                    find(&sub)
+                }
+            })
+        }
+        let Some(buttons) = self.traffic_light_buttons() else {
+            return;
+        };
+        if let Some(background) = Self::titlebar_container(&buttons.close).and_then(|c| find(&c)) {
+            background.setHidden(true);
+        }
+    }
+
     fn move_traffic_light(&mut self) {
+        self.hide_titlebar_background();
         if let Some(traffic_light_position) = self.traffic_light_position {
             if self.is_fullscreen() && !self.is_exiting_fullscreen {
                 self.restore_traffic_light();
