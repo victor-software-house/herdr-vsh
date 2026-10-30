@@ -2,14 +2,14 @@
 
 # Commands
 
-Inspect the window with `herdr-app ls` and `herdr-app status`.
-`herdr-app commands` lists the app actions below, even without an open window.
+Inspect the window with `herdr-vsh ls` and `herdr-vsh status`.
+`herdr-vsh commands` lists the app actions below, even without an open window.
 
-Run an action in the open window with `herdr-app do`:
+Run an action in the open window with `herdr-vsh do`:
 
 ```sh
-herdr-app do pane.split --direction right
-herdr-app do pane.split '{"direction":"right"}'
+herdr-vsh do pane.split --direction right
+herdr-vsh do pane.split '{"direction":"right"}'
 ```
 
 Arguments can be named flags or one JSON object. Required arguments are marked below.

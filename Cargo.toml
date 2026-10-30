@@ -36,6 +36,11 @@ fancy-regex = "0.19"
 notify = "7"
 sha2 = "0.10"
 
+# Herdr VSH's command, apart from Herdr's herdr-app.
+[[bin]]
+name = "herdr-vsh"
+path = "src/main.rs"
+
 [[test]]
 name = "shot_pixels"
 path = "tests/shot_pixels.rs"

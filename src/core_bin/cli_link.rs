@@ -4,7 +4,7 @@ use std::io;
 use std::path::Path;
 
 fn herdr_bundle(exe: &Path) -> bool {
-    exe.is_absolute() && exe.ends_with("Herdr.app/Contents/MacOS/Herdr")
+    exe.is_absolute() && exe.ends_with("Herdr VSH.app/Contents/MacOS/herdr-vsh")
 }
 
 fn installed_bundle(exe: &Path) -> bool {
@@ -17,7 +17,7 @@ pub(super) fn ensure(home: &Path, exe: &Path) -> io::Result<()> {
     if !installed_bundle(exe) {
         return Ok(());
     }
-    let link = home.join(".local/bin/herdr-app");
+    let link = home.join(".local/bin/herdr-vsh");
     match std::fs::symlink_metadata(&link) {
         Ok(meta) if meta.file_type().is_symlink() => {
             let target = std::fs::read_link(&link)?;
@@ -48,8 +48,8 @@ mod tests {
         let home = std::env::temp_dir().join(format!("herdr-cli-link-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&home);
         std::fs::create_dir_all(&home).unwrap();
-        let exe = home.join("Applications/Herdr.app/Contents/MacOS/Herdr");
-        let link = home.join(".local/bin/herdr-app");
+        let exe = home.join("Applications/Herdr VSH.app/Contents/MacOS/herdr-vsh");
+        let link = home.join(".local/bin/herdr-vsh");
         ensure(&home, &exe).unwrap();
         assert_eq!(std::fs::read_link(&link).unwrap(), exe);
         // Running it again leaves the same link alone.
@@ -57,17 +57,17 @@ mod tests {
         assert_eq!(std::fs::read_link(&link).unwrap(), exe);
 
         for old in [
-            home.join("old/Herdr.app/Contents/MacOS/Herdr"),
-            "../../Applications/Herdr.app/Contents/MacOS/Herdr".into(),
-            "/Volumes/Herdr/Herdr.app/Contents/MacOS/Herdr".into(),
-            "/private/var/folders/AppTranslocation/old/d/Herdr.app/Contents/MacOS/Herdr".into(),
+            home.join("old/Herdr VSH.app/Contents/MacOS/herdr-vsh"),
+            "../../Applications/Herdr VSH.app/Contents/MacOS/herdr-vsh".into(),
+            "/Volumes/Herdr VSH/Herdr VSH.app/Contents/MacOS/herdr-vsh".into(),
+            "/private/var/folders/AppTranslocation/old/d/Herdr VSH.app/Contents/MacOS/herdr-vsh".into(),
         ] {
             std::fs::remove_file(&link).unwrap();
             symlink(old, &link).unwrap();
             ensure(&home, &exe).unwrap();
             assert_eq!(std::fs::read_link(&link).unwrap(), exe);
         }
-        let old = home.join("previous/Herdr.app/Contents/MacOS/Herdr");
+        let old = home.join("previous/Herdr VSH.app/Contents/MacOS/herdr-vsh");
         std::fs::create_dir_all(old.parent().unwrap()).unwrap();
         std::fs::write(&old, "previous executable").unwrap();
         std::fs::remove_file(&link).unwrap();
@@ -88,10 +88,10 @@ mod tests {
         std::fs::remove_file(&link).unwrap();
 
         for skipped in [
-            "/Volumes/Herdr/Herdr.app/Contents/MacOS/Herdr",
-            "/private/var/folders/AppTranslocation/random/d/Herdr.app/Contents/MacOS/Herdr",
-            "/work/target/debug/Herdr.app/Contents/MacOS/Herdr",
-            "/work/target/debug/herdr-app",
+            "/Volumes/Herdr VSH/Herdr VSH.app/Contents/MacOS/herdr-vsh",
+            "/private/var/folders/AppTranslocation/random/d/Herdr VSH.app/Contents/MacOS/herdr-vsh",
+            "/work/target/debug/Herdr VSH.app/Contents/MacOS/herdr-vsh",
+            "/work/target/debug/herdr-vsh",
             "/Applications/Other.app/Contents/MacOS/Herdr",
         ] {
             ensure(&home, Path::new(skipped)).unwrap();
