@@ -34,8 +34,16 @@ fn lines(c: char) -> Option<[u8; 4]> {
     Some(out)
 }
 
-/// Rectangles in cell fractions (x0, y0, x1, y1) and an alpha, for block elements.
-fn blocks(c: char) -> Option<(Vec<[f32; 4]>, f32)> {
+/// Rectangles in cell fractions (x0, y0, x1, y1), each with an alpha: block
+/// elements and the block mosaics of Symbols for Legacy Computing.
+fn blocks(c: char) -> Option<Vec<([f32; 4], f32)>> {
+    if let Some((rects, alpha)) = block_elements(c) {
+        return Some(rects.into_iter().map(|r| (r, alpha)).collect());
+    }
+    legacy_blocks(c as u32)
+}
+
+fn block_elements(c: char) -> Option<(Vec<[f32; 4]>, f32)> {
     let e = 1.0 / 8.0;
     let r = |x0: f32, y0: f32, x1: f32, y1: f32| [x0, y0, x1, y1];
     let quads = |ul: bool, ur: bool, ll: bool, lr: bool| {
@@ -76,6 +84,155 @@ fn blocks(c: char) -> Option<(Vec<[f32; 4]>, f32)> {
     })
 }
 
+/// Octant patterns Unicode encodes elsewhere (blank, quadrants, halves,
+/// quarter blocks): U+1CD00.. lists the other 230 in increasing order, with
+/// bit n set for octant n+1 (two per row, top to bottom).
+const OCTANTS_ELSEWHERE: [u8; 26] = [0, 1, 2, 3, 5, 10, 15, 20, 40, 63, 64, 80, 85, 90, 95, 128, 160, 165, 170, 175, 192, 240, 245, 250, 252, 255];
+
+/// Sextants, octants and the eighth blocks, as Ghostty draws them
+/// (src/font/sprite/draw/symbols_for_legacy_computing*.zig).
+fn legacy_blocks(code: u32) -> Option<Vec<([f32; 4], f32)>> {
+    let e = 1.0 / 8.0;
+    let solid = |v: Vec<[f32; 4]>| v.into_iter().map(|r| (r, 1.0)).collect::<Vec<_>>();
+    // Two columns of `rows` rows; bit n fills cell n (left to right, top down).
+    let grid = |bits: u32, rows: u32| {
+        let h = 1.0 / rows as f32;
+        solid((0..rows * 2).filter(|n| bits & (1 << n) != 0).map(|n| {
+            let (col, row) = ((n % 2) as f32, (n / 2) as f32);
+            [col * 0.5, row * h, col * 0.5 + 0.5, (row + 1.0) * h]
+        }).collect())
+    };
+    let upper = |k: f32| [0.0, 0.0, 1.0, k * e];
+    let lower = |k: f32| [0.0, 1.0 - k * e, 1.0, 1.0];
+    let left = |k: f32| [0.0, 0.0, k * e, 1.0];
+    let right = |k: f32| [1.0 - k * e, 0.0, 1.0, 1.0];
+    let row = |n: f32| [0.0, n * e, 1.0, (n + 1.0) * e];
+    Some(match code {
+        // Sextants skip the patterns that are blank, a half or full.
+        0x1FB00..=0x1FB3B => {
+            let i = code - 0x1FB00;
+            grid(i + i / 0x14 + 1, 3)
+        }
+        0x1CD00..=0x1CDE5 => {
+            let bits = (0..=255u8).filter(|b| !OCTANTS_ELSEWHERE.contains(b)).nth((code - 0x1CD00) as usize)?;
+            grid(u32::from(bits), 4)
+        }
+        0x1FB70..=0x1FB75 => {
+            let n = (code - 0x1FB70 + 1) as f32;
+            solid(vec![[n * e, 0.0, (n + 1.0) * e, 1.0]])
+        }
+        0x1FB76..=0x1FB7B => solid(vec![row((code - 0x1FB76 + 1) as f32)]),
+        0x1FB7C => solid(vec![left(1.0), lower(1.0)]),
+        0x1FB7D => solid(vec![left(1.0), upper(1.0)]),
+        0x1FB7E => solid(vec![right(1.0), upper(1.0)]),
+        0x1FB7F => solid(vec![right(1.0), lower(1.0)]),
+        0x1FB80 => solid(vec![upper(1.0), lower(1.0)]),
+        0x1FB81 => solid(vec![row(0.0), row(2.0), row(4.0), row(7.0)]),
+        0x1FB82..=0x1FB86 => solid(vec![upper([2.0, 3.0, 5.0, 6.0, 7.0][(code - 0x1FB82) as usize])]),
+        0x1FB87..=0x1FB8B => solid(vec![right([2.0, 3.0, 5.0, 6.0, 7.0][(code - 0x1FB87) as usize])]),
+        0x1FB8C => vec![(left(4.0), 0.5)],
+        0x1FB8D => vec![(right(4.0), 0.5)],
+        0x1FB8E => vec![(upper(4.0), 0.5)],
+        0x1FB8F => vec![(lower(4.0), 0.5)],
+        0x1FB90 => vec![([0.0, 0.0, 1.0, 1.0], 0.5)],
+        // A medium shade with one half solid.
+        0x1FB91 => vec![([0.0, 0.5, 1.0, 1.0], 0.5), (upper(4.0), 1.0)],
+        0x1FB92 => vec![([0.0, 0.0, 1.0, 0.5], 0.5), (lower(4.0), 1.0)],
+        0x1FB94 => vec![([0.0, 0.0, 0.5, 1.0], 0.5), (right(4.0), 1.0)],
+        0x1FB97 => solid(vec![[0.0, 0.25, 1.0, 0.5], [0.0, 0.75, 1.0, 1.0]]),
+        _ => return None,
+    })
+}
+
+/// Smooth mosaics (U+1FB3C..1FB67) as Ghostty's 3x4 patterns: `#` filled,
+/// `.` empty, `/` and `\` a diagonal edge through that spot.
+const MOSAICS: [&str; 44] = [
+    "......#..##.", "......#\\.###", "...#..#\\.##.", "...#..##.###",
+    "#..#..##.##.", "/###########", "./##########", ".##.########",
+    "..#.########", ".##.##.#####", "..../#######", "........#.##",
+    "......./####", ".....#./#.##", ".....#.#####", "..#..#.##.##",
+    "##\\#########", "#\\.#########", "##.##.######", "#..##.######",
+    "##.##.##.###", "...#\\.######", "#########\\##", "#########.\\#",
+    "######.##.##", "######.##..#", "###.##.##.##", "##.#........",
+    "####/.......", "##.#/.#.....", "#####.#.....", "##.##.#..#..",
+    "#######/....", "###########/", "##########/.", "########.##.",
+    "########.#..", "#####.##.##.", ".##..#......", "###.\\#......",
+    ".##.\\#..#...", "###.##..#...", ".##.##..#..#", "######.\\#...",
+];
+
+/// A smooth mosaic's outline in cell fractions: Ghostty walks ten spots around
+/// the cell (corners, thirds of the sides, middles of top and bottom) and
+/// keeps those the pattern fills, skipping one between two filled neighbors.
+fn mosaic(code: u32) -> Option<Vec<(f32, f32)>> {
+    let p = MOSAICS.get(code.checked_sub(0x1FB3C)? as usize)?.as_bytes();
+    if p.len() != 12 {
+        return None;
+    }
+    let f = |i: usize| p[i] == b'#';
+    let (t, u, l, b) = (0.0, 1.0 / 3.0, 2.0 / 3.0, 1.0);
+    let spots = [
+        (f(0), (0.0, t)),
+        (f(3) && (!f(0) || !f(6)), (0.0, u)),
+        (f(6) && (!f(3) || !f(9)), (0.0, l)),
+        (f(9), (0.0, b)),
+        (f(10) && (!f(9) || !f(11)), (0.5, b)),
+        (f(11), (1.0, b)),
+        (f(8) && (!f(11) || !f(5)), (1.0, l)),
+        (f(5) && (!f(8) || !f(2)), (1.0, u)),
+        (f(2), (1.0, t)),
+        (f(1) && (!f(2) || !f(0)), (0.5, t)),
+    ];
+    Some(spots.into_iter().filter(|(on, _)| *on).map(|(_, p)| p).collect())
+}
+
+/// Filled shapes in cell fractions: smooth mosaics, the triangles from an
+/// edge to the center (U+1FB68..1FB6F, the first four inverted) and the
+/// corner triangles ◢◣◤◥.
+fn polygons(c: char) -> Option<Vec<Vec<(f32, f32)>>> {
+    let code = c as u32;
+    let edge = |k: u32| -> [(f32, f32); 3] {
+        let m = (0.5, 0.5);
+        match k {
+            0 => [m, (0.0, 0.0), (0.0, 1.0)], // left
+            1 => [m, (1.0, 0.0), (0.0, 0.0)], // top
+            2 => [m, (1.0, 1.0), (1.0, 0.0)], // right
+            _ => [m, (0.0, 1.0), (1.0, 1.0)], // bottom
+        }
+    };
+    Some(match code {
+        0x1FB3C..=0x1FB67 => vec![mosaic(code)?],
+        // The cell without one edge triangle: the other three.
+        0x1FB68..=0x1FB6B => (0..4).filter(|k| *k != code - 0x1FB68).map(|k| edge(k).to_vec()).collect(),
+        0x1FB6C..=0x1FB6F => vec![edge(code - 0x1FB6C).to_vec()],
+        0x25E2 => vec![vec![(1.0, 0.0), (1.0, 1.0), (0.0, 1.0)]],
+        0x25E3 => vec![vec![(0.0, 0.0), (1.0, 1.0), (0.0, 1.0)]],
+        0x25E4 => vec![vec![(0.0, 0.0), (1.0, 0.0), (0.0, 1.0)]],
+        0x25E5 => vec![vec![(0.0, 0.0), (1.0, 0.0), (1.0, 1.0)]],
+        _ => return None,
+    })
+}
+
+fn is_braille(c: char) -> bool {
+    ('\u{2800}'..='\u{28FF}').contains(&c)
+}
+
+/// 🮕 🮖: a checkerboard four squares wide, with the parity of its top left square.
+fn checkerboard(c: char) -> Option<u32> {
+    match c as u32 {
+        0x1FB95 => Some(0),
+        0x1FB96 => Some(1),
+        _ => None,
+    }
+}
+
+/// U+1FB93 is unassigned, a hole in the block; Ghostty draws it empty.
+const HOLE: char = '\u{1FB93}';
+
+/// ╱ ╲ ╳: lines from corner to corner.
+fn is_diagonal(c: char) -> bool {
+    ('\u{2571}'..='\u{2573}').contains(&c)
+}
+
 /// ⏺ (Claude Code marks every step with it): few terminal fonts have it, and
 /// the fallback may draw nothing.
 const RECORD: char = '\u{23FA}';
@@ -83,7 +240,17 @@ const RECORD: char = '\u{23FA}';
 pub fn is_sprite(text: &str) -> bool {
     let mut chars = text.chars();
     match (chars.next(), chars.next()) {
-        (Some(c), None) => lines(c).is_some() || blocks(c).is_some() || ('\u{E0B0}'..='\u{E0BF}').contains(&c) || c == RECORD,
+        (Some(c), None) => {
+            lines(c).is_some()
+                || blocks(c).is_some()
+                || polygons(c).is_some()
+                || is_braille(c)
+                || is_diagonal(c)
+                || checkerboard(c).is_some()
+                || c == HOLE
+                || ('\u{E0B0}'..='\u{E0BF}').contains(&c)
+                || c == RECORD
+        }
         _ => false,
     }
 }
@@ -112,11 +279,57 @@ pub fn paint(text: &str, cell: Bounds<Pixels>, color: Hsla, window: &mut Window)
         powerline(c, (x, y, w, h), line, color, window);
         return;
     }
-    if let Some((rects, alpha)) = blocks(c) {
-        let mut color = color;
-        color.a *= alpha;
-        for [x0, y0, x1, y1] in rects {
+    if let Some(rects) = blocks(c) {
+        for ([x0, y0, x1, y1], alpha) in rects {
+            let mut color = color;
+            color.a *= alpha;
             rect(x + x0 * w, y + y0 * h, x + x1 * w, y + y1 * h, color);
+        }
+        return;
+    }
+    if let Some(parity) = checkerboard(c) {
+        // Ghostty's grid: square edges on whole device pixels, rows as tall as the columns are wide.
+        let (cw, ch) = ((w * scale).round() as u32, (h * scale).round() as u32);
+        let rows = ((4.0 * h / w).round() as u32).max(1);
+        for gx in 0..4 {
+            for gy in (0..rows).filter(|gy| (gx + gy) % 2 == parity) {
+                let (x0, x1) = ((cw * gx / 4) as f32 / scale, (cw * (gx + 1) / 4) as f32 / scale);
+                let (y0, y1) = ((ch * gy / rows) as f32 / scale, (ch * (gy + 1) / rows) as f32 / scale);
+                rect(x + x0, y + y0, x + x1, y + y1, color);
+            }
+        }
+        return;
+    }
+    if let Some(shapes) = polygons(c) {
+        // Edges on the cell's sides reach a device pixel out, so neighbors meet without a seam.
+        let ext = 1.0 / scale;
+        let out = |v: f32, size: f32| if v <= 0.0 { -ext } else if v >= 1.0 { size + ext } else { v * size };
+        for shape in shapes {
+            let pts: Vec<_> = shape.iter().map(|&(px_, py_)| point(px(x + out(px_, w)), px(y + out(py_, h)))).collect();
+            let mut path = PathBuilder::fill();
+            path.add_polygon(&pts, true);
+            if let Ok(path) = path.build() {
+                window.paint_path(path, color);
+            }
+        }
+        return;
+    }
+    if is_braille(c) {
+        braille(c, (x, y, w, h), scale, color, window);
+        return;
+    }
+    if is_diagonal(c) {
+        let light = (w / 8.0).round().max(1.0 / scale);
+        let p = |px_: f32, py_: f32| point(px(x + px_ * w), px(y + py_ * h));
+        let mut path = PathBuilder::stroke(px(light));
+        if c != '\u{2572}' {
+            path.add_polygon(&[p(1.0, 0.0), p(0.0, 1.0)], false);
+        }
+        if c != '\u{2571}' {
+            path.add_polygon(&[p(0.0, 0.0), p(1.0, 1.0)], false);
+        }
+        if let Ok(path) = path.build() {
+            window.paint_path(path, color);
         }
         return;
     }
@@ -160,6 +373,62 @@ pub fn paint(text: &str, cell: Bounds<Pixels>, color: Hsla, window: &mut Window)
             } else {
                 rect(cx + off - t / 2.0, a0, cx + off + t / 2.0, a1, color);
             }
+        }
+    }
+}
+
+/// Braille (U+2800..28FF): square dots on a 2x4 grid, laid out in whole
+/// device pixels as Ghostty does (src/font/sprite/draw/braille.zig), so every
+/// dot is the same size.
+fn braille(c: char, (x, y, w, h): (f32, f32, f32, f32), scale: f32, color: Hsla, window: &mut Window) {
+    let (width, height) = ((w * scale).round() as i32, (h * scale).round() as i32);
+    let mut dot = (width / 4).min(height / 8);
+    let (mut x_spacing, mut y_spacing) = (width / 4, height / 8);
+    let (mut x_margin, mut y_margin) = (x_spacing / 2, y_spacing / 2);
+    let mut x_left = width - 2 * x_margin - x_spacing - 2 * dot;
+    let mut y_left = height - 2 * y_margin - 3 * y_spacing - 4 * dot;
+    if x_left >= 2 && y_left >= 4 && dot == 0 {
+        dot += 1;
+        x_left -= 2;
+        y_left -= 4;
+    }
+    if x_left >= 2 && x_margin == 0 {
+        x_margin = 1;
+        x_left -= 2;
+    }
+    if y_left >= 2 && y_margin == 0 {
+        y_margin = 1;
+        y_left -= 2;
+    }
+    if x_left >= 1 {
+        x_spacing += 1;
+        x_left -= 1;
+    }
+    if y_left >= 3 {
+        y_spacing += 1;
+        y_left -= 3;
+    }
+    if x_left >= 2 {
+        x_margin += 1;
+        x_left -= 2;
+    }
+    if y_left >= 2 {
+        y_margin += 1;
+        y_left -= 2;
+    }
+    if x_left >= 2 && y_left >= 4 {
+        dot += 1;
+    }
+    let cols = [x_margin, x_margin + dot + x_spacing];
+    let rows: Vec<i32> = (0..4).map(|r| y_margin + r * (dot + y_spacing)).collect();
+    // Unicode's dot order: 1-3 down the left, 4-6 down the right, then 7 and 8.
+    const DOTS: [(usize, usize); 8] = [(0, 0), (0, 1), (0, 2), (1, 0), (1, 1), (1, 2), (0, 3), (1, 3)];
+    let bits = c as u32 - 0x2800;
+    let (x0, y0) = ((x * scale).round(), (y * scale).round());
+    for (n, (col, row)) in DOTS.iter().enumerate() {
+        if bits & (1 << n) != 0 {
+            let at = point(px((x0 + cols[*col] as f32) / scale), px((y0 + rows[*row] as f32) / scale));
+            window.paint_quad(fill(Bounds::new(at, size(px(dot as f32 / scale), px(dot as f32 / scale))), color));
         }
     }
 }
@@ -232,5 +501,24 @@ mod tests {
         for c in '\u{2580}'..='\u{259F}' {
             assert!(blocks(c).is_some(), "{c} has no entry");
         }
+    }
+
+    #[test]
+    fn legacy_computing_mosaics_are_sprites() {
+        let ch = |code: u32| char::from_u32(code).unwrap().to_string();
+        // Every sextant, octant and smooth mosaic, braille, the diagonals.
+        for code in (0x1FB00..=0x1FB6F).chain(0x1CD00..=0x1CDE5).chain(0x1FB70..=0x1FB97).chain(0x2800..=0x28FF).chain(0x2571..=0x2573) {
+            assert!(is_sprite(&ch(code)), "U+{code:X} is not drawn");
+        }
+        assert_eq!((checkerboard('\u{1FB95}'), checkerboard('\u{1FB96}')), (Some(0), Some(1)));
+        // 🬀 is the top left sextant; 🬻 all but the top left.
+        assert_eq!(legacy_blocks(0x1FB00).unwrap().len(), 1);
+        assert_eq!(legacy_blocks(0x1FB3B).unwrap().len(), 5);
+        // U+1CD00 is octant 3 alone; U+1CDE5 all but octant 1.
+        assert_eq!(legacy_blocks(0x1CD00).unwrap(), vec![([0.0, 0.25, 0.5, 0.5], 1.0)]);
+        assert_eq!(legacy_blocks(0x1CDE5).unwrap().len(), 7);
+        assert!(legacy_blocks(0x1CDE6).is_none());
+        // 🬼: a triangle in the lower left.
+        assert_eq!(mosaic(0x1FB3C).unwrap(), vec![(0.0, 2.0 / 3.0), (0.0, 1.0), (0.5, 1.0)]);
     }
 }
