@@ -1,0 +1,1173 @@
+terminal-find
+
+From: Victor Araújo <victor@victor-software-house.com>
+
+Downstream-Reason: Find in a terminal and its scrollback with cmd+f (ctrl+shift+f elsewhere), through libghostty search: upstream PR #195 by dgurinovich, carried until it merges.
+Upstream-Status: submitted
+Drop-When: herdrdev/herdr-app merges PR #195 or ships its own terminal find.
+---
+ defaults/AGENTS.md             |   15 ++
+ defaults/frame/palette/main.js |    3 
+ defaults/herdr.d.ts            |    3 
+ defaults/keys.json             |    1 
+ defaults/keys.macos.json       |    3 
+ docs/commands.md               |   20 ++
+ src/commands.rs                |    3 
+ src/settings.rs                |   26 +++
+ src/telemetry.rs               |   28 +++
+ src/terminal.rs                |  198 +++++++++++++++++++++
+ src/vt.rs                      |  373 ++++++++++++++++++++++++++++++++++++++--
+ src/window.rs                  |   47 +++--
+ 12 files changed, 683 insertions(+), 37 deletions(-)
+
+diff --git a/defaults/AGENTS.md b/defaults/AGENTS.md
+index 128d4806943c60181695f87397a839e67beeb064..76f425371a7f68fe83208bd34737fce088279ccd 100644
+--- a/defaults/AGENTS.md
++++ b/defaults/AGENTS.md
+@@ -547,6 +547,18 @@ The main ones:
+   Shift+right-click is always Herdr's menu). Copy, paste, paste-image and implicit
+   right-click targeting follow keyboard focus, including peek and floating terminals;
+   with no terminal holding keyboard focus, they use the focused pane or block.
++  `terminal.find {text?}` opens the focused terminal's find bar (Cmd+F on macOS,
++  Ctrl+Shift+F on Linux and Windows; with `text`, it finds that): it searches the
++  screen and the scrollback, ASCII letters in any case and the rest exactly, marks
++  every match and selects the newest. In the bar, Enter goes up to the next older
++  match and Shift+Enter back down, both wrapping and scrolling to it; Esc closes the
++  bar and gives the keys back. `terminal.find_next` / `terminal.find_prev` do the same
++  from anywhere (Cmd+G / Cmd+Shift+G on macOS; no default key elsewhere). Keys in the
++  bar never reach the program. Run by an agent (`herdr-vsh do`), or behind a dialog,
++  `terminal.find` opens the bar without taking the person's keys. keys.json is
++  installed once, so an older one has none of these keys: add `"cmd-f":
++  "terminal.find"`, `"cmd-g": "terminal.find_next"` and `"cmd-shift-g":
++  "terminal.find_prev"` (or `"ctrl-shift-f": "terminal.find"`) to its `terminal` section.
+   Dragging a text selection past the terminal's top or bottom scrolls while held;
+   releasing stops it. Programs that track the mouse still get their mouse events
+   (hold Shift to select text instead). A drag stays with the terminal where it
+@@ -880,7 +892,8 @@ All of it is in `herdr.d.ts`. In short:
+   (sidebars, bars), surface, popover, raised, hover, selected, border,
+   input (a stronger border), foreground, muted, dim, accent,
+   accent_foreground, solid and solid_foreground (a primary button),
+-  selection, working, blocked, done, idle, unknown, ansi0..15; light and
++  selection, find_match and find_active (a terminal find's matches, the selected
++  one), working, blocked, done, idle, unknown, ansi0..15; light and
+   dark themes name the same ones), `settings()` (with `dark`: the
+   appearance now), `keys()`, `commands()` (every app
+   command, its arguments and what it does), `layouts()` (the layout names).
+diff --git a/defaults/frame/palette/main.js b/defaults/frame/palette/main.js
+index fa5e3d10d5f2436264edc30b3cdb0499db6119eb..bf775ec1931fc9631f00e38f90751ec12a45ee35 100644
+--- a/defaults/frame/palette/main.js
++++ b/defaults/frame/palette/main.js
+@@ -45,6 +45,9 @@ const NAMED = [
+   ["terminal.open", {}, "Terminal", "New terminal", "shell"],
+   ["terminal.copy", {}, "Terminal", "Copy", "clipboard"],
+   ["terminal.paste", {}, "Terminal", "Paste", "clipboard"],
++  ["terminal.find", {}, "Terminal", "Find…", "search scrollback text"],
++  ["terminal.find_next", {}, "Terminal", "Find next", "search older match"],
++  ["terminal.find_prev", {}, "Terminal", "Find previous", "search newer match"],
+   ["agent.next", {}, "Agent", "Next agent", ""],
+   ["agent.prev", {}, "Agent", "Previous agent", ""],
+   ["window.minimize", {}, "Window", "Minimize window", ""],
+diff --git a/defaults/herdr.d.ts b/defaults/herdr.d.ts
+index 0d64bccad09670076a80b3780e52812198e6f40c..7f0bbcb16d34a1e9e81a76db6d439521b198a7b2 100644
+--- a/defaults/herdr.d.ts
++++ b/defaults/herdr.d.ts
+@@ -260,7 +260,8 @@ export function placement(): {
+ /** Every theme color by name: background (the terminals'), surface, canvas (behind cards),
+  *  chrome (sidebars and bars), popover, raised, hover, selected, border, input, foreground,
+  *  muted, dim, accent, accent_foreground, solid and solid_foreground (a primary button: ink on
+- *  paper, paper on ink), selection, working, blocked, done, idle, unknown, ansi0..ansi15.
++ *  paper, paper on ink), selection, find_match and find_active (a terminal find's matches,
++ *  the selected one), working, blocked, done, idle, unknown, ansi0..ansi15.
+  *  Light and dark themes name the same colors, so a mod that uses them follows both. */
+ export function theme(): Record<string, string>;
+ 
+diff --git a/defaults/keys.json b/defaults/keys.json
+index 8e2f7003ce48d93c598f6d47a655adf8338930ad..869eca394fda5e9fc7ed7a90f4f3fee292c1a438 100644
+--- a/defaults/keys.json
++++ b/defaults/keys.json
+@@ -60,6 +60,7 @@
+     "shift-f2": "space.rename"
+   },
+   "terminal": {
++    "ctrl-shift-f": "terminal.find",
+     "ctrl-backspace": "send:\u0017",
+     "ctrl-left": "send:\u001bb",
+     "ctrl-right": "send:\u001bf",
+diff --git a/defaults/keys.macos.json b/defaults/keys.macos.json
+index da93c778ab2a849bac5945cdc7230128bf0f1362..54447b2f10190fd98f4f0c9c20899188b692bc80 100644
+--- a/defaults/keys.macos.json
++++ b/defaults/keys.macos.json
+@@ -59,6 +59,9 @@
+     "ctrl-9": "space.select:9"
+   },
+   "terminal": {
++    "cmd-f": "terminal.find",
++    "cmd-g": "terminal.find_next",
++    "cmd-shift-g": "terminal.find_prev",
+     "cmd-c": "terminal.copy",
+     "cmd-v": "terminal.paste",
+     "ctrl-v": "terminal.paste_image",
+diff --git a/docs/commands.md b/docs/commands.md
+index 00870d094ff4585fafe24795c292827e357c9c00..4fec0d82b3f9f9ecb628120949a76fbad05ced81 100644
+--- a/docs/commands.md
++++ b/docs/commands.md
+@@ -283,6 +283,26 @@ Paste into the focused terminal (copied files as if dropped; an image alone as t
+ 
+ No arguments.
+ 
++## `terminal.find`
++
++Find text in the focused terminal and its scrollback: opens its find bar (with text: finds that). ASCII letters match in any case, the rest exactly.
++
++| Argument | Required |
++|---|---|
++| `text` | no |
++
++## `terminal.find_next`
++
++Select the focused terminal's next match up, toward older output, scrolling to it (its find bar must be open).
++
++No arguments.
++
++## `terminal.find_prev`
++
++Select the focused terminal's previous match, back toward newer output.
++
++No arguments.
++
+ ## `terminal.paste_image`
+ 
+ Ctrl+V: the clipboard's image as a file on the focused terminal's machine, when that's another one; on Windows, paste clipboard text; otherwise Ctrl+V goes to the terminal.
+diff --git a/src/commands.rs b/src/commands.rs
+index 1db18f7e66bf4546ae0781043da8bfebcc75f80f..2227ad811e7671affe489fabe1a3b4cae99e2efb 100644
+--- a/src/commands.rs
++++ b/src/commands.rs
+@@ -63,6 +63,9 @@ pub const COMMANDS: &[Command] = &[
+     cmd("terminal.show", &[opt("terminal"), opt("pane")], "Show a terminal in a pane for now, in place of its own (no terminal: back)."),
+     cmd("terminal.copy", &[], "Copy the focused terminal's selection."),
+     cmd("terminal.paste", &[], "Paste into the focused terminal (copied files as if dropped; an image alone as terminal.paste_image pastes it)."),
++    cmd("terminal.find", &[opt("text")], "Find text in the focused terminal and its scrollback: opens its find bar (with text: finds that). ASCII letters match in any case, the rest exactly."),
++    cmd("terminal.find_next", &[], "Select the focused terminal's next match up, toward older output, scrolling to it (its find bar must be open)."),
++    cmd("terminal.find_prev", &[], "Select the focused terminal's previous match, back toward newer output."),
+     cmd("terminal.paste_image", &[], "Ctrl+V: the clipboard's image as a file on the focused terminal's machine, when that's another one; on Windows, paste clipboard text; otherwise Ctrl+V goes to the terminal."),
+     cmd("agent.focus", &[req("terminal")], "Show an agent (sub-agents too)."),
+     cmd("agent.next", &[], "Show the next agent, in the order the agents list shows them."),
+diff --git a/src/settings.rs b/src/settings.rs
+index f7eef721080fb50b05cbb46c0059f638ea44b31d..0c71794aedc8ef29ff64a161deaa82ed32829adb 100644
+--- a/src/settings.rs
++++ b/src/settings.rs
+@@ -360,9 +360,35 @@ fn resolve(p: &Palette, overrides: &BTreeMap<String, String>) -> Theme {
+     for (k, v) in overrides {
+         t.insert(k.clone(), v.clone());
+     }
++    // A find's matches: yellow over the background the terminal is drawn on
++    // (a theme's colors may override it), the selected one stronger.
++    let parsed = |k: &str| t.get(k).map(|v| rgb(v)).map(|c| (c.0 as u32) << 16 | (c.1 as u32) << 8 | c.2 as u32);
++    let (base, yellow) = (parsed("background").unwrap_or(bg), parsed("ansi3").unwrap_or(p.ansi[3]));
++    let light = is_light(base);
++    for (k, amount) in [("find_match", if light { 0.45 } else { 0.35 }), ("find_active", if light { 0.8 } else { 0.75 })] {
++        if !overrides.contains_key(k) {
++            t.insert(k.to_owned(), hex(mix(base, yellow, amount)));
++        }
++    }
+     t
+ }
+ 
++#[test]
++fn a_finds_selected_match_stands_out_more_than_the_others_in_every_shipped_theme() {
++    let luminance = |s: &str| {
++        let c = rgb(s);
++        0.2126 * c.0 as f32 + 0.7152 * c.1 as f32 + 0.0722 * c.2 as f32
++    };
++    let shipped = THEMES.iter().map(|(n, text)| (n.to_string(), parse_theme_file(n, text).unwrap()));
++    let presets = PRESETS.iter().map(|n| (n.to_string(), palette(n).unwrap()));
++    for (name, (p, o)) in presets.chain(shipped) {
++        let t = resolve(&p, &o);
++        let bg = luminance(&t["background"]);
++        let (all, one) = ((luminance(&t["find_match"]) - bg).abs(), (luminance(&t["find_active"]) - bg).abs());
++        assert!(one > all, "{name}: the selected match ({}) must stand out more than the others ({}) on {}", t["find_active"], t["find_match"], t["background"]);
++    }
++}
++
+ /// settings.json: preferences used where a layout leaves its look unset.
+ #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+ #[serde(default)]
+diff --git a/src/telemetry.rs b/src/telemetry.rs
+index 3569ff70cc252b783006dc12b8fac9c3036f7a9b..a444fd4d607137caa952b7f1b9aaaa33c58e7fe4 100644
+--- a/src/telemetry.rs
++++ b/src/telemetry.rs
+@@ -314,15 +314,27 @@ pub(crate) fn version(v: &str) -> String {
+     if parts.len() == 3 && parts.iter().all(|p| number(p)) && pre_ok { v.to_owned() } else { "other".into() }
+ }
+ 
+-/// Whether keys.json differs from the shipped one.
++/// Whether keys.json differs from the shipped one. keys.json is installed
++/// once, so one shipped before the find keys and left alone isn't custom.
+ fn keys_custom() -> bool {
+     let parse = |s: &str| serde_json::from_str::<Value>(s).ok();
+     match std::fs::read_to_string(crate::keys::path()) {
+-        Ok(text) => parse(&text) != parse(crate::keys::DEFAULTS),
++        Ok(text) => {
++            let (mine, shipped) = (parse(&text), parse(crate::keys::DEFAULTS));
++            mine != shipped && mine != shipped.map(without_find_keys)
++        }
+         Err(_) => false,
+     }
+ }
+ 
++/// The shipped keys as they were before terminal find.
++fn without_find_keys(mut keys: Value) -> Value {
++    if let Some(terminal) = keys.get_mut("terminal").and_then(Value::as_object_mut) {
++        terminal.retain(|_, action| !action.as_str().is_some_and(|a| a.starts_with("terminal.find")));
++    }
++    keys
++}
++
+ // ---- dates (UTC, no calendar crate) ------------------------------------------
+ 
+ fn unix_now() -> u64 {
+@@ -700,6 +712,18 @@ fn post(url: &str, body: &str) -> Option<u16> {
+ mod tests {
+     use super::*;
+ 
++    #[test]
++    fn the_shipped_keys_before_terminal_find_lack_only_its_keys() {
++        let shipped: Value = serde_json::from_str(crate::keys::DEFAULTS).unwrap();
++        let before = without_find_keys(shipped.clone());
++        assert!(!before.to_string().contains("terminal.find"));
++        let count = |v: &Value| v["terminal"].as_object().unwrap().len();
++        let find_keys = shipped["terminal"].as_object().unwrap().values().filter(|a| a.as_str().unwrap().starts_with("terminal.find")).count();
++        assert!(find_keys > 0);
++        assert_eq!(count(&before) + find_keys, count(&shipped));
++        assert_eq!(before["global"], shipped["global"]);
++    }
++
+     #[test]
+     fn dates_are_utc_calendar_days() {
+         assert_eq!(date(0), "1970-01-01");
+diff --git a/src/terminal.rs b/src/terminal.rs
+index e8232670567800e13d5e58418b877060ddbb8aa5..2987b4538c2eb6319551d9c4c0a08f2a57868ea9 100644
+--- a/src/terminal.rs
++++ b/src/terminal.rs
+@@ -12,6 +12,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
+ use std::time::{Duration, Instant};
+ use std::collections::HashMap;
+ use crate::links;
++use gpui_base::input::{InputEvent, InputState};
+ use std::path::PathBuf;
+ use std::rc::Rc;
+ use std::sync::Arc;
+@@ -73,6 +74,8 @@ struct Grid {
+     painted: Vec<(Rc<Vec<vt::Cell>>, Vec<RowOp>)>,
+     /// The font size, cell size, font and fonts loaded the drawings were built with.
+     painted_with: (u32, Size<Pixels>, String, u64),
++    /// What the find bar's count shows, as of the last paint.
++    find_status: vt::FindStatus,
+ }
+ 
+ pub struct TerminalView {
+@@ -100,6 +103,12 @@ pub struct TerminalView {
+     typed_at: Cell<Option<Instant>>,
+     /// Scrolled this gesture, in lines, toward the next whole one.
+     scrolled: f32,
++    /// The find bar's text field, while the bar is open.
++    find: Option<Entity<InputState>>,
++    /// The find bar had the keys last (not the terminal): focusing the pane
++    /// again (a dialog closed, back from another tab) gives them back to it.
++    find_keys: bool,
++    _find_events: Option<Subscription>,
+     _reader: Option<Task<()>>,
+ }
+ 
+@@ -202,12 +211,16 @@ impl TerminalView {
+                 cursor_at: None,
+                 painted: Vec::new(),
+                 painted_with: (0, Size::default(), String::new(), 0),
++                find_status: vt::FindStatus::default(),
+             })),
+             focus: cx.focus_handle(),
+             was_focused: false,
+             shown_in: Cell::new(0),
+             typed_at: Cell::new(None),
+             scrolled: 0.0,
++            find: None,
++            find_keys: false,
++            _find_events: None,
+             _reader: None,
+         };
+         view.connect(core, false, cx);
+@@ -234,6 +247,7 @@ impl TerminalView {
+     /// take seconds, and the window must keep drawing meanwhile.
+     /// `announce_end`: emit Ended if the terminal turns out to be gone.
+     fn connect(&mut self, core: Arc<Core>, announce_end: bool, cx: &mut Context<Self>) {
++        let needle = self.find.as_ref().map(|f| f.read(cx).value().to_string());
+         let (cols, rows, facts) = {
+             let mut g = self.grid.borrow_mut();
+             let (cols, rows) = (g.vt.cols, g.vt.rows);
+@@ -242,6 +256,10 @@ impl TerminalView {
+             g.vt = Vt::new(cols, rows);
+             // Addresses on other machines are `machine/tN`.
+             g.vt.allow_local_image_media(!self.address.contains('/'));
++            // An open find bar goes on finding in what the core sends.
++            if let Some(needle) = &needle {
++                g.vt.find(needle, false);
++            }
+             g.vt.resize(cols, rows, cell.0, cell.1);
+             g.vt_cell = cell;
+             g.told_display = None;
+@@ -537,7 +555,143 @@ impl TerminalView {
+         }
+     }
+ 
+-    fn key_down(&mut self, ev: &KeyDownEvent, _w: &mut Window, cx: &mut Context<Self>) {
++    /// Opens the find bar; `text`: find that. `take_keys`: the bar gets the
++    /// keys, its text selected (not when an agent opens it behind a dialog).
++    pub fn find_open(&mut self, text: Option<String>, take_keys: bool, window: &mut Window, cx: &mut Context<Self>) {
++        let input = match &self.find {
++            Some(input) => input.clone(),
++            None => {
++                let input = cx.new(|cx| InputState::new(window, cx).placeholder("Find"));
++                self._find_events = Some(cx.subscribe_in(&input, window, |this, input, ev: &InputEvent, _window, cx| match ev {
++                    InputEvent::Change => {
++                        let needle = input.read(cx).value().to_string();
++                        this.grid.borrow_mut().vt.find(&needle, true);
++                        cx.notify();
++                    }
++                    // Enter: the next match up toward older output; Shift+Enter: back down.
++                    InputEvent::PressEnter { shift, .. } => this.find_step(!shift, cx),
++                    InputEvent::Focus => this.find_keys = true,
++                    InputEvent::PasteWithoutText | InputEvent::Blur => {}
++                }));
++                self.find = Some(input.clone());
++                input
++            }
++        };
++        input.update(cx, |state, cx| {
++            if let Some(text) = &text {
++                state.set_value(text.clone(), window, cx);
++            }
++            if take_keys {
++                state.focus(window, cx);
++                state.select_all(window, cx);
++            }
++        });
++        if let Some(text) = text {
++            self.grid.borrow_mut().vt.find(&text, true);
++        }
++        cx.notify();
++    }
++
++    /// The next match toward older output (`older`) or newer, scrolled into view.
++    pub fn find_step(&mut self, older: bool, cx: &mut Context<Self>) {
++        if self.find.is_some() {
++            self.grid.borrow_mut().vt.find_step(older);
++            cx.notify();
++        }
++    }
++
++    /// Closes the find bar: its marks go, the keys go back to the terminal.
++    /// The view stays where the find took it.
++    pub fn find_close(&mut self, window: &mut Window, cx: &mut Context<Self>) {
++        if self.find.take().is_some() {
++            self._find_events = None;
++            self.find_keys = false;
++            self.grid.borrow_mut().vt.find("", false);
++            self.focus.focus(window, cx);
++            cx.notify();
++        }
++    }
++
++    /// What to focus to give this pane the keys: the terminal, or its find bar
++    /// if that had them last.
++    pub fn focus_target(&self, cx: &App) -> FocusHandle {
++        match &self.find {
++            Some(input) if self.find_keys => input.read(cx).focus_handle(cx),
++            _ => self.focus.clone(),
++        }
++    }
++
++    /// The find bar has the keys (not the terminal it's in).
++    fn finding(&self, window: &Window, cx: &App) -> bool {
++        self.find.is_some() && !self.focus.is_focused(window) && self.focus.contains_focused(window, cx)
++    }
++
++    fn find_bar(&self, input: &Entity<InputState>, cx: &mut Context<Self>) -> AnyElement {
++        let status = self.grid.borrow().find_status;
++        let has_text = !input.read(cx).value().is_empty();
++        let count = match (has_text, status.total, status.selected) {
++            (false, ..) => String::new(),
++            (true, 0, _) if status.busy => "…".into(),
++            (true, 0, _) => "No results".into(),
++            (true, total, Some(i)) => format!("{}/{total}{}", i + 1, if status.busy { "+" } else { "" }),
++            (true, total, None) => format!("{total}{}", if status.busy { "+" } else { "" }),
++        };
++        let muted = crate::settings::color("muted");
++        let button = |id: &'static str, label: &'static str| {
++            div()
++                .id(id)
++                .px_1p5()
++                .rounded_sm()
++                .cursor_pointer()
++                .text_color(muted)
++                .hover(|s| s.bg(crate::settings::color("hover")).text_color(crate::settings::color("foreground")))
++                .child(label)
++        };
++        div()
++            .id(SharedString::from(format!("find-{}", self.address)))
++            .absolute()
++            .top_2()
++            .right_3()
++            .flex()
++            .items_center()
++            .gap_1p5()
++            .pl_2p5()
++            .pr_1()
++            .py_1()
++            .rounded_md()
++            .border_1()
++            .border_color(crate::settings::color("border"))
++            .bg(crate::settings::color("popover"))
++            .text_color(crate::settings::color("foreground"))
++            // The interface's own text size (Settings → Look), like the sidebars'.
++            .text_size(rems(1.0))
++            .cursor_default()
++            // Presses here are the bar's: they don't select text, paste, open the
++            // pane menu or reach the program. Releases and moves pass on, for
++            // gestures that started elsewhere (a program's drag, a divider).
++            .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
++            .on_mouse_down(MouseButton::Middle, |_, _, cx| cx.stop_propagation())
++            .on_mouse_down(MouseButton::Right, |_, _, cx| cx.stop_propagation())
++            .on_scroll_wheel(|_, _, cx| cx.stop_propagation())
++            .on_key_down(cx.listener(|this, ev: &KeyDownEvent, window, cx| {
++                if ev.keystroke.key == "escape" {
++                    cx.stop_propagation();
++                    this.find_close(window, cx);
++                }
++            }))
++            .child(div().w(rems(15.0)).child(gpui_base::Input::new(input)))
++            .child(div().min_w(rems(4.0)).text_color(muted).child(count))
++            .child(button("find-older", "↑").on_click(cx.listener(|this, _, _, cx| this.find_step(true, cx))))
++            .child(button("find-newer", "↓").on_click(cx.listener(|this, _, _, cx| this.find_step(false, cx))))
++            .child(button("find-close", "×").on_click(cx.listener(|this, _, window, cx| this.find_close(window, cx))))
++            .into_any_element()
++    }
++
++    fn key_down(&mut self, ev: &KeyDownEvent, window: &mut Window, cx: &mut Context<Self>) {
++        // Keys typed in the find bar are the bar's, never the program's.
++        if !self.focus.is_focused(window) {
++            return;
++        }
+         let k = &ev.keystroke;
+         // Typing clears a selection, as in Herdr.
+         if !k.key.starts_with("shift") && !k.key.starts_with("control") && !k.key.starts_with("alt") {
+@@ -1120,6 +1274,13 @@ fn paint_grid(bounds: Bounds<Pixels>, grid: &Rc<RefCell<Grid>>, focused: bool, w
+     let origin = point(snap(origin.x), snap(origin.y));
+     g.origin = origin;
+     let frame = g.vt.frame();
++    // A find reads the scrollback a frame at a time: draw again until it's
++    // done, and whenever its count changed (the bar shows it).
++    let found = g.vt.find_status();
++    if found.busy || found != g.find_status {
++        g.find_status = found;
++        window.request_animation_frame();
++    }
+     let placements = g.vt.placements();
+     let dev = device_cell(cell, scale);
+     // Each placement: under the text or not, the part shown, and where the whole image would sit.
+@@ -1369,7 +1530,16 @@ impl EntityInputHandler for TerminalView {
+ impl Render for TerminalView {
+     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+         crate::bench::count(&crate::bench::TERMINAL);
+-        let focused = self.focus.is_focused(window);
++        // Typing in its find bar, the terminal still counts as focused (for its
++        // program and its cursor); only the input methods stay with the bar.
++        let typing = self.focus.is_focused(window);
++        if typing {
++            self.find_keys = false;
++        }
++        // The bar's own field counts at once: until a frame shows it, the
++        // terminal's tree doesn't know it's inside.
++        let in_bar = self.find.as_ref().is_some_and(|f| f.read(cx).focus_handle(cx).is_focused(window));
++        let focused = typing || in_bar || self.focus.contains_focused(window, cx);
+         if focused != self.was_focused {
+             self.was_focused = focused;
+             let g = self.grid.borrow();
+@@ -1388,6 +1558,7 @@ impl Render for TerminalView {
+         let selection_view = cx.entity().downgrade();
+         let (input_focus, input_view) = (self.focus.clone(), cx.entity());
+         let ended = self.ended.clone().or_else(|| self.lost.then(|| "reconnecting to core…".to_owned()));
++        let find_bar = self.find.clone().map(|input| self.find_bar(&input, cx));
+ 
+         div()
+             .id(SharedString::from(format!("term-{}", self.address)))
+@@ -1397,7 +1568,25 @@ impl Render for TerminalView {
+             .relative()
+             // Below 1, the layout's background shows through (cells a program colors stay solid).
+             .bg(hsla(vt::theme().bg).opacity(crate::settings::get().terminal_opacity))
+-            .on_action(cx.listener(|this, a: &gpui_shell::action::ShellAction, _, cx| {
++            .on_action(cx.listener(|this, a: &gpui_shell::action::ShellAction, window, cx| {
++                if this.finding(window, cx) {
++                    // The terminal's keys don't type into its program from the find
++                    // bar; pasting there pastes into the bar.
++                    match a.id() {
++                        id if id.starts_with("send:") => {}
++                        "terminal.paste" | "terminal.paste_image" => {
++                            let text = cx.read_from_clipboard().and_then(|c| c.text()).map(|t| t.replace(['\r', '\n'], " "));
++                            if let (Some(text), Some(input)) = (text, this.find.clone()) {
++                                input.update(cx, |state, cx| state.insert(text, window, cx));
++                                let needle = input.read(cx).value().to_string();
++                                this.grid.borrow_mut().vt.find(&needle, true);
++                                cx.notify();
++                            }
++                        }
++                        _ => cx.propagate(),
++                    }
++                    return;
++                }
+                 // `send:<text>` bindings from keys.json type into this terminal.
+                 match a.id().strip_prefix("send:") {
+                     Some(text) => this.send(text.as_bytes()),
+@@ -1516,13 +1705,14 @@ impl Render for TerminalView {
+                         });
+                         // While focused, the OS input methods (Pinyin, Japanese,
+                         // dead keys) type into this terminal.
+-                        if focused {
++                        if typing {
+                             window.handle_input(&input_focus, ElementInputHandler::new(bounds, input_view), cx);
+                         }
+                     },
+                 )
+                 .size_full(),
+             )
++            .when_some(find_bar, |d, bar| d.child(bar))
+             .when_some(ended, |d, why| {
+                 d.child(
+                     div()
+diff --git a/src/vt.rs b/src/vt.rs
+index eaccce93e3010b98ea0cb1a109d86e4e39fa009b..103f4a75bea32c4413ccce38f5ee9148be70445f 100644
+--- a/src/vt.rs
++++ b/src/vt.rs
+@@ -55,6 +55,9 @@ pub struct Theme {
+     pub bg: Rgb,
+     pub cursor: Rgb,
+     pub selection_bg: Rgb,
++    /// Behind the matches of a find, and behind the one it selected.
++    pub find_match: Rgb,
++    pub find_active: Rgb,
+     pub palette16: [Rgb; 16],
+     pub minimum_contrast: f32,
+ }
+@@ -68,7 +71,16 @@ pub fn theme() -> Theme {
+     for (i, c) in palette16.iter_mut().enumerate() {
+         *c = get(&format!("ansi{i}"));
+     }
+-    Theme { fg: get("terminal_foreground"), bg: get("background"), cursor: get("cursor"), selection_bg: get("selection"), palette16, minimum_contrast: crate::settings::get().minimum_contrast }
++    Theme {
++        fg: get("terminal_foreground"),
++        bg: get("background"),
++        cursor: get("cursor"),
++        selection_bg: get("selection"),
++        find_match: get("find_match"),
++        find_active: get("find_active"),
++        palette16,
++        minimum_contrast: crate::settings::get().minimum_contrast,
++    }
+ }
+ 
+ #[derive(Clone, Default, PartialEq)]
+@@ -260,19 +272,55 @@ pub struct Vt {
+     /// The cursor, the kitty images and the colors as last drawn: changes to
+     /// them don't mark the render state dirty.
+     drawn: (CursorKey, u64, u64),
+-    /// The rows read last frame by libghostty's row id, with their selection:
+-    /// one that isn't dirty is the same row and isn't read again.
+-    seen: HashMap<[u64; 2], (Rc<Vec<Cell>>, Option<(u16, u16)>)>,
++    /// The rows read last frame by libghostty's row id, with their selection
++    /// and find marks: one that isn't dirty is the same row and isn't read again.
++    seen: HashMap<[u64; 2], (Rc<Vec<Cell>>, Option<(u16, u16)>, Marks)>,
+     /// The width and colors they were read with: a change reads every row.
+     seen_with: (u16, u64),
+     placements_cache: RefCell<Option<Vec<Placement>>>,
+     /// Whether the program wants win32 key events (Ghostty doesn't track it).
+     pub win32: crate::win32_keys::Win32Input,
++    /// Find in the terminal and its scrollback: libghostty's search, made on first use.
++    search: GhosttySearch,
++    /// The search has a needle: frames feed it and mark its matches.
++    find_on: bool,
++    /// A new needle selects the newest match as soon as one is found.
++    find_select: bool,
++    /// The matches on each viewport row, as of the last frame.
++    find_marks: Vec<Marks>,
+ }
+ 
+ /// What of the cursor a frame shows: (on screen, x, y, visible, style).
+ type CursorKey = (bool, u16, u16, bool, i32);
+ 
++/// A row's find matches: (first column, last column, the selected match).
++type Marks = Vec<(u16, u16, bool)>;
++
++/// What a find has found so far.
++#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
++pub struct FindStatus {
++    pub total: usize,
++    /// The selected match: 0 is the newest (nearest the prompt).
++    pub selected: Option<usize>,
++    /// Scrollback still being read: more matches may come.
++    pub busy: bool,
++}
++
++/// What colors a cell's background, strongest first.
++#[derive(Clone, Copy, PartialEq)]
++enum Mark {
++    None,
++    Match,
++    Active,
++    Selected,
++}
++
++/// How long a frame may spend reading scrollback for a find; the rest waits
++/// for the next frame, so a long history doesn't stall the window.
++const FIND_BUDGET: Duration = Duration::from_millis(4);
++/// Text on a find highlight stays readable, whatever the program colored it.
++const FIND_CONTRAST: f32 = 3.0;
++
+ /// Where a link shows: (viewport row, first column, last column) per row.
+ pub type Spans = Vec<(u16, u16, u16)>;
+ 
+@@ -470,6 +518,10 @@ impl Vt {
+                 seen_with: (0, 0),
+                 placements_cache: RefCell::new(None),
+                 win32: Default::default(),
++                search: std::ptr::null_mut(),
++                find_on: false,
++                find_select: false,
++                find_marks: Vec::new(),
+             };
+             vt.apply_theme();
+             vt
+@@ -998,6 +1050,149 @@ impl Vt {
+         unsafe { ghostty_terminal_scroll_viewport(self.term, s) };
+     }
+ 
++    /// Finds `needle` on screen and in the scrollback (ASCII letters in any
++    /// case, the rest exactly); frames mark its matches. Empty: stops finding.
++    /// `select`: the newest match is selected (and shown) once there is one.
++    pub fn find(&mut self, needle: &str, select: bool) {
++        unsafe {
++            if self.search.is_null() {
++                if needle.is_empty() {
++                    return;
++                }
++                ok(ghostty_search_new(std::ptr::null(), &mut self.search, self.term), "search_new");
++            }
++            let s = GhosttyString { ptr: needle.as_ptr(), len: needle.len() };
++            let value = if needle.is_empty() { std::ptr::null() } else { &s as *const _ as *const c_void };
++            ghostty_search_set(self.search, GHOSTTY_SEARCH_OPT_NEEDLE, value);
++        }
++        self.find_on = !needle.is_empty();
++        self.find_select = self.find_on && select;
++        self.find_marks.clear();
++    }
++
++    /// Selects the next match toward older output (`older`) or toward newer,
++    /// wrapping around, and scrolls it into view. False when nothing matches.
++    pub fn find_step(&mut self, older: bool) -> bool {
++        if !self.find_on {
++            return false;
++        }
++        self.placements_cache.get_mut().take();
++        let opt = if older { GHOSTTY_SEARCH_OPT_SELECT_NEXT } else { GHOSTTY_SEARCH_OPT_SELECT_PREV };
++        let selected = unsafe { ghostty_search_set(self.search, opt, std::ptr::null()) == GHOSTTY_SUCCESS };
++        // Before the scrollback is read there may be nothing to select yet:
++        // the first match found is selected then.
++        if selected {
++            self.find_select = false;
++        }
++        selected
++    }
++
++    /// What the find has found, as of the last frame.
++    pub fn find_status(&self) -> FindStatus {
++        if !self.find_on {
++            return FindStatus::default();
++        }
++        unsafe {
++            let s = self.search;
++            let mut status: GhosttySearchStatus = GHOSTTY_SEARCH_STATUS_COMPLETE;
++            ghostty_search_get(s, GHOSTTY_SEARCH_DATA_STATUS, &mut status as *mut _ as *mut c_void);
++            let mut total = 0usize;
++            ghostty_search_get(s, GHOSTTY_SEARCH_DATA_TOTAL_MATCHES, &mut total as *mut _ as *mut c_void);
++            let mut index = 0usize;
++            let selected = (ghostty_search_get(s, GHOSTTY_SEARCH_DATA_SELECTED_INDEX, &mut index as *mut _ as *mut c_void) == GHOSTTY_SUCCESS)
++                .then_some(index);
++            FindStatus { total, selected, busy: status != GHOSTTY_SEARCH_STATUS_COMPLETE }
++        }
++    }
++
++    /// Catches the find up with the terminal, reading scrollback for at most
++    /// `FIND_BUDGET`, and selects the newest match for a new needle once one
++    /// is found. Before the render state is read: selecting may scroll.
++    fn find_pump(&mut self) {
++        unsafe {
++            let s = self.search;
++            ghostty_search_feed(s);
++            let started = Instant::now();
++            loop {
++                let mut status: GhosttySearchStatus = GHOSTTY_SEARCH_STATUS_COMPLETE;
++                if ghostty_search_tick(s, &mut status) != GHOSTTY_SUCCESS || started.elapsed() >= FIND_BUDGET {
++                    break;
++                }
++                match status {
++                    GHOSTTY_SEARCH_STATUS_RUNNING => {}
++                    GHOSTTY_SEARCH_STATUS_FEED_REQUIRED => {
++                        ghostty_search_feed(s);
++                    }
++                    _ => break,
++                }
++            }
++            if self.find_select {
++                let found = self.find_status();
++                if found.total > 0 && found.selected.is_none() && self.find_step(true) {
++                    // The match list is as of the last feed, and selecting may have scrolled.
++                    ghostty_search_feed(s);
++                }
++            }
++        }
++    }
++
++    /// Where a match shows in the viewport, by row: libghostty finds them a
++    /// page at a time, so some are outside it.
++    fn find_read_marks(&mut self) {
++        let rows = self.rows as usize;
++        self.find_marks.clear();
++        self.find_marks.resize(rows, Vec::new());
++        unsafe {
++            let s = self.search;
++            let sized = GhosttySelection { size: std::mem::size_of::<GhosttySelection>(), ..Default::default() };
++            let mut found = vec![sized; 64];
++            let mut buf = GhosttySelectionBuffer { ptr: found.as_mut_ptr(), cap: found.len(), len: 0 };
++            let mut r = ghostty_search_get(s, GHOSTTY_SEARCH_DATA_VIEWPORT_MATCHES, &mut buf as *mut _ as *mut c_void);
++            if r == GHOSTTY_OUT_OF_SPACE {
++                found.resize(buf.len, sized);
++                buf = GhosttySelectionBuffer { ptr: found.as_mut_ptr(), cap: found.len(), len: 0 };
++                r = ghostty_search_get(s, GHOSTTY_SEARCH_DATA_VIEWPORT_MATCHES, &mut buf as *mut _ as *mut c_void);
++            }
++            if r != GHOSTTY_SUCCESS {
++                return;
++            }
++            found.truncate(buf.len);
++            let mut chosen = sized;
++            let chosen = (ghostty_search_get(s, GHOSTTY_SEARCH_DATA_SELECTED_MATCH, &mut chosen as *mut _ as *mut c_void) == GHOSTTY_SUCCESS)
++                .then(|| self.screen_span(&chosen))
++                .flatten();
++            // Screen rows count from the top of the scrollback; the viewport starts at `top`.
++            let Some(top) = self.grid_ref(GHOSTTY_POINT_TAG_VIEWPORT, 0, 0).and_then(|r| {
++                let mut p = GhosttyPointCoordinate::default();
++                (ghostty_terminal_point_from_grid_ref(self.term, &r, GHOSTTY_POINT_TAG_SCREEN, &mut p) == GHOSTTY_SUCCESS).then_some(p.y)
++            }) else {
++                return;
++            };
++            let last = self.cols.saturating_sub(1);
++            for m in &found {
++                let Some(((x0, y0), (x1, y1))) = self.screen_span(m) else { continue };
++                let active = chosen == Some(((x0, y0), (x1, y1)));
++                for y in y0..=y1 {
++                    let Some(vy) = y.checked_sub(top).map(|v| v as usize).filter(|v| *v < rows) else { continue };
++                    let from = if y == y0 { x0 } else { 0 };
++                    let to = if y == y1 { x1 } else { last };
++                    self.find_marks[vy].push((from, to.min(last), active));
++                }
++            }
++        }
++    }
++
++    /// A match's first and last cell in screen coordinates (top of the
++    /// scrollback is row 0), first one first.
++    fn screen_span(&self, m: &GhosttySelection) -> Option<((u16, u32), (u16, u32))> {
++        let at = |r: &GhosttyGridRef| unsafe {
++            let mut p = GhosttyPointCoordinate::default();
++            (ghostty_terminal_point_from_grid_ref(self.term, r, GHOSTTY_POINT_TAG_SCREEN, &mut p) == GHOSTTY_SUCCESS).then_some((p.x, p.y))
++        };
++        let (a, b) = (at(&m.start)?, at(&m.end)?);
++        Some(if (a.1, a.0) <= (b.1, b.0) { (a, b) } else { (b, a) })
++    }
++
+     /// Wraps pasted text the way the program asked (bracketed paste or not).
+     pub fn paste_bytes(&self, text: &str) -> Vec<u8> {
+         if self.mode(BRACKETED_PASTE) {
+@@ -1060,9 +1255,19 @@ impl Vt {
+                 self.shared.held_since = None;
+             }
+             let state = self.shared.state;
+-            if self.shared.held_since.is_none() {
++            // While output is held, the screen stays as it was, and so do its marks.
++            let live = self.shared.held_since.is_none();
++            if live && self.find_on {
++                self.find_pump();
++            }
++            if live {
+                 ghostty_render_state_update(state, self.term);
+             }
++            if !self.find_on {
++                self.find_marks.clear();
++            } else if live {
++                self.find_read_marks();
++            }
+ 
+             let mut colors = GhosttyRenderStateColors { size: std::mem::size_of::<GhosttyRenderStateColors>(), ..Default::default() };
+             ghostty_render_state_get(state, GHOSTTY_RENDER_STATE_DATA_COLORS, &mut colors as *mut _ as *mut c_void);
+@@ -1086,27 +1291,48 @@ impl Vt {
+                 let selection = selected.then_some((sel.start_x, sel.end_x));
+                 let mut id = GhosttyRenderStateRowId::default();
+                 let known = ghostty_render_state_row_get(self.rows_it, GHOSTTY_RENDER_STATE_ROW_DATA_ID, &mut id as *mut _ as *mut c_void) == GHOSTTY_SUCCESS;
++                // Held, the screen is the one the hold started with, maybe scrolled
++                // since the marks were read: a row keeps the marks it had, by its id.
++                let marks = if live {
++                    self.find_marks.get(rows.len()).cloned().unwrap_or_default()
++                } else {
++                    known.then(|| self.seen.get(&id.bits).map(|s| s.2.clone())).flatten().unwrap_or_default()
++                };
+                 // Everything changed: no row is kept (but each is remembered).
+                 let mut row_dirty = true;
+                 if !all {
+                     ghostty_render_state_row_get(self.rows_it, GHOSTTY_RENDER_STATE_ROW_DATA_DIRTY, &mut row_dirty as *mut _ as *mut c_void);
+                 }
+-                let same = (known && !row_dirty).then(|| self.seen.get(&id.bits)).flatten().filter(|(_, s)| *s == selection);
++                let same = (known && !row_dirty).then(|| self.seen.get(&id.bits)).flatten().filter(|(_, s, m)| *s == selection && *m == marks);
+                 let row = match same {
+-                    Some((row, _)) => row.clone(),
++                    Some((row, _, _)) => row.clone(),
+                     None => {
+                         ghostty_render_state_row_get(self.rows_it, GHOSTTY_RENDER_STATE_ROW_DATA_CELLS, &mut self.cells as *mut _ as *mut c_void);
+                         let mut row = Vec::with_capacity(self.cols as usize);
+                         let mut x: u16 = 0;
++                        // A wide character's second cell is marked as its first.
++                        let mut tail = Mark::None;
+                         while ghostty_render_state_row_cells_next(self.cells) {
+-                            row.push(self.read_cell(fg_default, selected && x >= sel.start_x && x <= sel.end_x));
++                            let mark = if tail != Mark::None {
++                                tail
++                            } else if selected && x >= sel.start_x && x <= sel.end_x {
++                                Mark::Selected
++                            } else {
++                                marks.iter().filter(|(a, b, _)| *a <= x && x <= *b).fold(Mark::None, |m, (_, _, active)| {
++                                    let this = if *active { Mark::Active } else { Mark::Match };
++                                    if m == Mark::Active { m } else { this }
++                                })
++                            };
++                            let cell = self.read_cell(fg_default, mark);
++                            tail = if cell.wide { mark } else { Mark::None };
++                            row.push(cell);
+                             x += 1;
+                         }
+                         Rc::new(row)
+                     }
+                 };
+                 if known {
+-                    seen.insert(id.bits, (row.clone(), selection));
++                    seen.insert(id.bits, (row.clone(), selection, marks));
+                 }
+                 rows.push(row);
+             }
+@@ -1133,7 +1359,7 @@ impl Vt {
+         }
+     }
+ 
+-    unsafe fn read_cell(&mut self, fg_default: Rgb, selected: bool) -> Cell {
++    unsafe fn read_cell(&mut self, fg_default: Rgb, mark: Mark) -> Cell {
+         unsafe {
+             let c = self.cells;
+             let mut raw: GhosttyCell = Default::default();
+@@ -1163,8 +1389,11 @@ impl Vt {
+                 bg = Some(fg);
+                 fg = new_fg;
+             }
+-            if selected {
+-                bg = Some(self.theme.selection_bg);
++            match mark {
++                Mark::Selected => bg = Some(self.theme.selection_bg),
++                Mark::Active => bg = Some(self.theme.find_active),
++                Mark::Match => bg = Some(self.theme.find_match),
++                Mark::None => {}
+             }
+             let mut text = String::new();
+             if wide != GHOSTTY_CELL_WIDE_SPACER_TAIL && wide != GHOSTTY_CELL_WIDE_SPACER_HEAD && !style.invisible {
+@@ -1186,8 +1415,10 @@ impl Vt {
+             }
+ 
+             // Contrast adjustment is opt-in; graphics always keep their colors.
+-            if self.theme.minimum_contrast > 1.0 && !preserves_graphics_color(&text) {
+-                fg = readable(fg, bg.unwrap_or(self.theme.bg), self.theme.minimum_contrast);
++            let found = matches!(mark, Mark::Match | Mark::Active);
++            let minimum = if found { self.theme.minimum_contrast.max(FIND_CONTRAST) } else { self.theme.minimum_contrast };
++            if minimum > 1.0 && !preserves_graphics_color(&text) {
++                fg = readable(fg, bg.unwrap_or(self.theme.bg), minimum);
+             }
+ 
+             Cell {
+@@ -1310,6 +1541,8 @@ impl Drop for Vt {
+             ghostty_key_encoder_free(self.keys);
+             ghostty_render_state_row_cells_free(self.cells);
+             ghostty_render_state_row_iterator_free(self.rows_it);
++            // Before the terminal: it releases what it tracks in there.
++            ghostty_search_free(self.search);
+             ghostty_terminal_free(self.term);
+             ghostty_render_state_free(self.shared.state);
+         }
+@@ -1374,6 +1607,118 @@ mod tests {
+         assert!(!Rc::ptr_eq(&after.rows[0], &recolored.rows[0]), "a palette change reads every row");
+     }
+ 
++    fn line(f: &Frame, y: usize) -> String {
++        f.rows[y].iter().map(|c| if c.text.is_empty() { " " } else { c.text.as_str() }).collect()
++    }
++
++    /// The columns of row `y` with a find highlight: (column, the selected match).
++    fn marked(vt: &Vt, f: &Frame, y: usize) -> Vec<(usize, bool)> {
++        f.rows[y]
++            .iter()
++            .enumerate()
++            .filter_map(|(x, c)| match c.bg {
++                Some(bg) if bg == vt.theme.find_active => Some((x, true)),
++                Some(bg) if bg == vt.theme.find_match => Some((x, false)),
++                _ => None,
++            })
++            .collect()
++    }
++
++    #[test]
++    fn find_marks_each_match_in_any_ascii_case_and_selects_the_newest() {
++        let mut vt = Vt::new(20, 4);
++        vt.write(b"an error\r\nERROR again\r\nfine");
++        vt.find("error", true);
++        let f = vt.frame();
++        assert_eq!(marked(&vt, &f, 0), (3..8).map(|x| (x, false)).collect::<Vec<_>>());
++        assert_eq!(marked(&vt, &f, 1), (0..5).map(|x| (x, true)).collect::<Vec<_>>(), "the newest match is the one selected");
++        assert!(marked(&vt, &f, 2).is_empty());
++        assert_eq!(vt.find_status(), FindStatus { total: 2, selected: Some(0), busy: false });
++    }
++
++    #[test]
++    fn find_steps_toward_older_matches_and_wraps() {
++        let mut vt = Vt::new(20, 4);
++        vt.write(b"a1 x\r\na2 x\r\na3 x");
++        vt.find("x", true);
++        vt.frame();
++        assert_eq!(vt.find_status().selected, Some(0));
++        assert!(vt.find_step(true));
++        let f = vt.frame();
++        assert_eq!(vt.find_status().selected, Some(1));
++        assert_eq!(marked(&vt, &f, 1), vec![(3, true)]);
++        vt.find_step(true);
++        vt.find_step(true);
++        vt.frame();
++        assert_eq!(vt.find_status().selected, Some(0), "past the oldest it wraps to the newest");
++        vt.find_step(false);
++        vt.frame();
++        assert_eq!(vt.find_status().selected, Some(2), "and back toward newer it wraps the other way");
++    }
++
++    #[test]
++    fn find_scrolls_to_a_match_in_the_scrollback() {
++        let mut vt = Vt::new(30, 5);
++        vt.write(b"the needle is here\r\n");
++        for i in 0..200 {
++            vt.write(format!("line {i}\r\n").as_bytes());
++        }
++        vt.find("needle", true);
++        // Reading a long scrollback can take a few frames.
++        let mut f = vt.frame();
++        for _ in 0..50 {
++            if vt.find_status().selected.is_some() {
++                break;
++            }
++            f = vt.frame();
++        }
++        assert_eq!(vt.find_status().total, 1);
++        let y = (0..5).find(|y| line(&f, *y).starts_with("the needle")).expect("the viewport scrolled to the match");
++        assert_eq!(marked(&vt, &f, y), (4..10).map(|x| (x, true)).collect::<Vec<_>>());
++    }
++
++    #[test]
++    fn a_match_wrapped_onto_the_next_row_marks_both_parts() {
++        let mut vt = Vt::new(10, 3);
++        vt.write(b"abcdefghNEEDLE");
++        vt.find("needle", true);
++        let f = vt.frame();
++        assert_eq!(marked(&vt, &f, 0), vec![(8, true), (9, true)]);
++        assert_eq!(marked(&vt, &f, 1), (0..4).map(|x| (x, true)).collect::<Vec<_>>());
++    }
++
++    #[test]
++    fn stopping_a_find_clears_its_marks_and_a_selection_wins_over_them() {
++        let mut vt = Vt::new(20, 3);
++        vt.write(b"find me");
++        vt.find("me", true);
++        let f = vt.frame();
++        assert_eq!(marked(&vt, &f, 0).len(), 2);
++        vt.select(Select::Press, 5, 0, 5.0 * 8.0 + 1.0, 1.0, 8.0, 48.0);
++        vt.select(Select::Drag, 6, 0, 6.0 * 8.0 + 7.0, 1.0, 8.0, 48.0);
++        let f = vt.frame();
++        assert!(f.rows[0][5].bg == Some(vt.theme.selection_bg) || f.rows[0][6].bg == Some(vt.theme.selection_bg), "{:?}", marked(&vt, &f, 0));
++        vt.clear_selection();
++        vt.find("", true);
++        let f = vt.frame();
++        assert!(marked(&vt, &f, 0).is_empty());
++        assert_eq!(vt.find_status(), FindStatus::default());
++    }
++
++    #[test]
++    fn rows_are_read_again_when_their_marks_change() {
++        let mut vt = Vt::new(20, 3);
++        vt.write(b"one\r\ntwo");
++        let before = vt.frame();
++        vt.find("two", true);
++        let found = vt.frame();
++        assert!(Rc::ptr_eq(&before.rows[0], &found.rows[0]), "a row without matches is kept");
++        assert!(!Rc::ptr_eq(&before.rows[1], &found.rows[1]));
++        vt.find("", true);
++        let cleared = vt.frame();
++        assert!(marked(&vt, &cleared, 1).is_empty());
++    }
++
+     #[test]
+     fn resize_queues_a_report_only_when_the_program_requested_it() {
+         let mut vt = Vt::new(20, 4);
+diff --git a/src/window.rs b/src/window.rs
+index 6935e3ed018203ce850e4a6f9b21ff17e4d5658c..199542a02963b96c2204024322d72b2bf18d610f 100644
+--- a/src/window.rs
++++ b/src/window.rs
+@@ -1429,7 +1429,7 @@ impl AppWindow {
+         self.focused_pane = focused.clone();
+         let no_dialog = !self.overlays.iter().any(|o| o.kind.modal_keys());
+         if terminal_block(&self.chrome, focused.as_deref()).is_some() {
+-            if pane_changed && no_dialog && let Some(f) = focused.as_deref().and_then(|p| self.pane_focus(p)) {
++            if pane_changed && no_dialog && let Some(f) = focused.as_deref().and_then(|p| self.pane_focus(p, cx)) {
+                 f.focus(window, cx);
+             }
+         } else if let Some(block) = self.agent_block() {
+@@ -1446,7 +1446,7 @@ impl AppWindow {
+             // A mod pane takes the keyboard on a click; until then the window holds
+             // it, so another tab's terminal can't keep it (and pull its tab back).
+             if no_dialog {
+-                focused.and_then(|p| self.pane_focus(&p)).unwrap_or_else(|| self.focus.clone()).focus(window, cx);
++                focused.and_then(|p| self.pane_focus(&p, cx)).unwrap_or_else(|| self.focus.clone()).focus(window, cx);
+             }
+         }
+         if self.window_active {
+@@ -1465,11 +1465,11 @@ impl AppWindow {
+     fn restore_focus(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+         let dialog = self.overlays.iter().rev().find(|o| o.kind.modal_keys()).map(|o| o.focus.clone());
+         let shown = if terminal_block(&self.chrome, self.focused_pane.as_deref()).is_some() {
+-            self.focused_pane.as_deref().and_then(|p| self.pane_focus(p))
++            self.focused_pane.as_deref().and_then(|p| self.pane_focus(p, cx))
+         } else if let Some(block) = self.agent_block() {
+             self.shown_agent().and_then(|a| self.agent_view(&block, &a)).map(|t| t.focus.clone())
+         } else if self.shows_tab() {
+-            self.model.focused_pane().and_then(|p| self.pane_focus(&p))
++            self.model.focused_pane().and_then(|p| self.pane_focus(&p, cx))
+         } else {
+             None
+         };
+@@ -1482,14 +1482,17 @@ impl AppWindow {
+     }
+ 
+     /// Peeks, floats and swapped-in views own keyboard focus without changing the model pane.
+-    fn focused_terminal(&self, window: &Window) -> Option<&Term> {
+-        self.terms.values().find(|t| t.focus.is_focused(window))
++    /// The terminal with the keys: its own, or its find bar's.
++    fn focused_terminal(&self, window: &Window, cx: &App) -> Option<&Term> {
++        self.terms.values().find(|t| t.focus.contains_focused(window, cx))
+             .or_else(|| self.focused_pane.as_deref().and_then(|p| self.pane_term(p)))
+             .or_else(|| self.model.focused_pane().and_then(|p| self.pane_term(&p)))
+     }
+ 
+-    fn pane_focus(&self, pane: &str) -> Option<FocusHandle> {
+-        self.pane_term(pane).map(|t| t.focus.clone())
++    /// What gives a pane the keys: its terminal, or that terminal's find bar
++    /// when the bar had them last.
++    fn pane_focus(&self, pane: &str, cx: &App) -> Option<FocusHandle> {
++        self.pane_term(pane).map(|t| t.view.read(cx).focus_target(cx))
+     }
+ 
+     fn load(&self, inst: Instance, window: &mut Window, cx: &mut Context<Self>) -> Copy {
+@@ -2804,7 +2807,7 @@ impl AppWindow {
+                     let id = block.id.clone();
+                     self.focused_pane = Some(id.clone());
+                     self.synced_model_pane = self.model.focused_pane();
+-                    if !self.overlays.iter().any(|o| o.kind.modal_keys()) && let Some(f) = self.pane_focus(&id) {
++                    if !self.overlays.iter().any(|o| o.kind.modal_keys()) && let Some(f) = self.pane_focus(&id, cx) {
+                         f.focus(window, cx);
+                     }
+                     self.publish(cx);
+@@ -2867,7 +2870,7 @@ impl AppWindow {
+                     Some("menu") => "",
+                     other => return self.fail(format!("terminal.right_click to is \"program\" or \"menu\", not {other:?}")),
+                 };
+-                let t = Self::owned(a, "terminal").or_else(|| self.focused_terminal(window).map(|t| t.address.clone()));
++                let t = Self::owned(a, "terminal").or_else(|| self.focused_terminal(window, cx).map(|t| t.address.clone()));
+                 let Some(t) = t.filter(|t| self.live.contains_key(t)) else { return self.fail("no such running terminal") };
+                 // Off the UI thread: a terminal on a slow machine answers late.
+                 let core = self.core.clone();
+@@ -2916,7 +2919,7 @@ impl AppWindow {
+                 }
+             }
+             "terminal.copy" | "terminal.paste" | "terminal.paste_image" => {
+-                if let Some(t) = self.focused_terminal(window) {
++                if let Some(t) = self.focused_terminal(window, cx) {
+                     t.view.update(cx, |v, cx| match name {
+                         "terminal.paste" => v.paste(cx),
+                         "terminal.paste_image" => v.paste_image(cx),
+@@ -2925,6 +2928,20 @@ impl AppWindow {
+                 }
+                 return;
+             }
++            "terminal.find" | "terminal.find_next" | "terminal.find_prev" => {
++                if let Some(t) = self.focused_terminal(window, cx) {
++                    let text = Self::owned(a, "text");
++                    // An agent's find doesn't take the keys from the person, nor
++                    // anyone's from an open dialog.
++                    let take_keys = person && !self.overlays.iter().any(|o| o.kind.modal_keys());
++                    t.view.clone().update(cx, |v, cx| match name {
++                        "terminal.find_next" => v.find_step(true, cx),
++                        "terminal.find_prev" => v.find_step(false, cx),
++                        _ => v.find_open(text, take_keys, window, cx),
++                    });
++                }
++                return;
++            }
+             // ---- agents
+             "agent.focus" => {
+                 let t = Self::arg(a, "terminal").unwrap_or_default().to_owned();
+@@ -3845,7 +3862,7 @@ impl AppWindow {
+                             let dialog = this.overlays.iter().any(|o| o.kind.modal_keys());
+                             if !dialog
+                                 && (window.focused(cx).is_none() || this.focus.is_focused(window))
+-                                && let Some(f) = this.focused_pane.as_ref().and_then(|p| this.pane_focus(p))
++                                && let Some(f) = this.focused_pane.as_ref().and_then(|p| this.pane_focus(p, cx))
+                                 && !f.is_focused(window)
+                             {
+                                 f.focus(window, cx);
+@@ -4459,11 +4476,11 @@ impl Render for AppWindow {
+         crate::bench::frame_start();
+         crate::terminal::next_frame();
+         window.set_rem_size(px(settings::ui_font_size()));
+-        // A terminal the person clicked into becomes the focused pane.
++        // A terminal the person clicked into (or its find bar) becomes the focused pane.
+         let clicked = self
+             .terms
+             .iter()
+-            .find(|(_, t)| t.focus.is_focused(window))
++            .find(|(_, t)| t.focus.contains_focused(window, cx))
+             .map(|(id, _)| id.clone());
+         if let Some(id) = clicked
+             && self.focused_pane.as_deref() != Some(id.as_str())
+@@ -4729,7 +4746,7 @@ mod tests {
+             assert!(!super::needs_model_pane(name, &json!({})), "{name}");
+             assert!(!super::needs_model_pane(name, &json!({"place": "tab"})), "{name}");
+         }
+-        for name in ["pane.focus", "terminal.copy", "terminal.paste", "terminal.paste_image", "terminal.right_click"] {
++        for name in ["pane.focus", "terminal.copy", "terminal.paste", "terminal.paste_image", "terminal.find", "terminal.find_next", "terminal.find_prev", "terminal.right_click"] {
+             assert!(!super::needs_model_pane(name, &json!({})), "{name}");
+         }
+     }
