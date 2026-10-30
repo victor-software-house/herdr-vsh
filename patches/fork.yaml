@@ -186,6 +186,7 @@ patches:
     scope:
       - .github/workflows/release.yml
       - scripts/vsh-package-macos
+      - packaging/vsh/**
   - name: fork-tooling
     kind: tooling
     purpose: Own fork policy, generated evidence, and integration configuration.

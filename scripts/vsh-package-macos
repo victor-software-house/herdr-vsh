@@ -73,9 +73,37 @@ cat > "$work/component.plist" <<'PLIST'
 </dict></array></plist>
 PLIST
 pkgbuild --root "$work/root" --component-plist "$work/component.plist" --install-location /Applications \
+  --scripts packaging/vsh/scripts \
   --identifier com.victor-software-house.herdr.pkg --version "$build" "$work/component.pkg"
+
+# The installer's pages: welcome, license, conclusion, the icon in the corner.
+# Only Apple Silicon on macOS 26 or newer, always into /Applications.
+resources="$work/resources"
+cp -R packaging/vsh/resources "$resources"
+cp LICENSE "$resources/LICENSE.txt"
+sips -Z 180 assets/icons/herdr-ui-icon-clean.png --out "$resources/background.png" >/dev/null
+cat > "$work/distribution.xml" <<XML
+<?xml version="1.0" encoding="utf-8"?>
+<installer-gui-script minSpecVersion="2">
+    <title>Herdr VSH</title>
+    <welcome file="welcome.html" mime-type="text/html"/>
+    <license file="LICENSE.txt"/>
+    <conclusion file="conclusion.html" mime-type="text/html"/>
+    <background file="background.png" alignment="bottomleft" scaling="none"/>
+    <background-darkAqua file="background.png" alignment="bottomleft" scaling="none"/>
+    <options customize="never" require-scripts="false" hostArchitectures="arm64"/>
+    <domains enable_localSystem="true" enable_currentUserHome="false" enable_anywhere="false"/>
+    <volume-check>
+        <allowed-os-versions><os-version min="26.0"/></allowed-os-versions>
+    </volume-check>
+    <choices-outline><line choice="app"/></choices-outline>
+    <choice id="app" visible="false"><pkg-ref id="com.victor-software-house.herdr.pkg"/></choice>
+    <pkg-ref id="com.victor-software-house.herdr.pkg" version="$build" onConclusion="none">component.pkg</pkg-ref>
+</installer-gui-script>
+XML
 mkdir -p "$(dirname "$out")"
-productbuild --package "$work/component.pkg" --sign "$installer_identity" "$out"
+productbuild --distribution "$work/distribution.xml" --resources "$resources" --package-path "$work" \
+  --sign "$installer_identity" "$out"
 
 xcrun notarytool submit "$out" --key "$NOTARY_KEY_PATH" --key-id "$NOTARY_KEY_ID" --issuer "$NOTARY_ISSUER_ID" --wait --timeout 30m
 xcrun stapler staple "$out"
