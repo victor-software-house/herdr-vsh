@@ -1,20 +1,21 @@
-# Build and test every supported platform; release.yml handles packaging.
+# Build and test every supported platform. Releases are release.yml, from vsh-v* tags.
 #
-# Rust caches use one pinned toolchain and only master pushes save, so PR
+# Rust caches use one pinned toolchain and only downstream pushes save, so PR
 # caches can't evict the ones everybody restores. setup-zig caches separately.
 name: ci
 
 on:
   push:
-    branches: [master]
+    branches: [downstream]
   # No paths-ignore here: CI is required to merge, so every PR needs it.
   pull_request:
+    branches: [downstream]
 
 permissions:
   contents: read
 
-# A newer push cancels older runs, on a PR and on master: PRs were tested
-# before merging, so only master's newest commit needs a run.
+# A newer push to the same PR or branch cancels the run it supersedes;
+# forkctl rewrites downstream, so an older tip's result is never needed.
 concurrency:
   group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
@@ -22,13 +23,14 @@ concurrency:
 env:
   RUST_TOOLCHAIN: 1.95.0
   # In the cache key: ghostty-sys can't tell when Zig changes.
-  ZIG_VERSION: 0.16.0
+  # 0.17: the vendored Ghostty (kitty-placeholders) needs it.
+  ZIG_VERSION: 0.17.0
   # File/line backtraces without full debug info: smaller target, faster cache.
   CARGO_PROFILE_DEV_DEBUG: "1"
   CARGO_PROFILE_TEST_DEBUG: "1"
   # Incremental state only bloats a cache: CI builds each commit once.
   CARGO_INCREMENTAL: "0"
-  SAVE_CACHES: ${{ github.event_name == 'push' && github.ref == 'refs/heads/master' }}
+  SAVE_CACHES: ${{ github.event_name == 'push' && github.ref == 'refs/heads/downstream' }}
 
 jobs:
   platform-tests:
@@ -38,7 +40,7 @@ jobs:
         include:
           # Match release's glibc floor and native platform runners.
           - { platform: linux-x86_64, runner: ubuntu-22.04 }
-          - { platform: macos-aarch64, runner: macos-15 }
+          - { platform: macos-aarch64, runner: macos-26 }
           - { platform: windows-x86_64, runner: windows-2022 }
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 45
