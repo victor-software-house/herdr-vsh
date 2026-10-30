@@ -1,0 +1,67 @@
+# Herdr VSH's release: push a tag `vsh-v<version>-<n>` on downstream. macOS 26 on
+# Apple Silicon only for now: scripts/vsh-package-macos builds Herdr-VSH.pkg,
+# signed and notarized, and it goes to the tag's GitHub Release under that
+# fixed name, so releases/latest/download/Herdr-VSH.pkg always serves the newest.
+# The name stays Release: the 1Password connection that releases the signing
+# set matches the workflow name and the release environment.
+name: Release
+run-name: release ${{ github.ref_name }}
+
+on:
+  push:
+    tags: ["vsh-v*"]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  RUST_TOOLCHAIN: 1.95.0
+
+jobs:
+  macos:
+    runs-on: macos-26
+    # Open to vsh-v* tags only.
+    environment: release
+    permissions:
+      contents: write
+      id-token: write # the OIDC token 1Password checks before it releases the signing set
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          submodules: true
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master
+        with:
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
+      - uses: mlugg/setup-zig@d1434d08867e3ee9daa34448df10607b98908d29 # v2.2.1
+        with:
+          version: 0.17.0
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          key: macos-aarch64-release
+          cache-bin: false
+      - name: Import the Developer ID identities and the notary key
+        uses: victor-software-house/actions/macos-signing@54aee9857878a4118c9f0db4966285ba19914c19 # main, 2026-10-27
+        with:
+          workload-id: ${{ vars.OP_WORKLOAD_ID }}
+          environment-id: ${{ vars.OP_ENVIRONMENT_ID }}
+          integration-key: ${{ secrets.OP_INTEGRATION_KEY }}
+          installer: true
+      - name: Build, sign and notarize
+        env:
+          APPLE_TEAM_ID: ${{ vars.APPLE_TEAM_ID }}
+        run: scripts/vsh-package-macos dist/Herdr-VSH.pkg
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: >-
+          gh release create "$GITHUB_REF_NAME" dist/Herdr-VSH.pkg
+          --repo "$GITHUB_REPOSITORY" --title "Herdr VSH ${GITHUB_REF_NAME#vsh-v}"
+          --notes "Herdr with Ghostty-like rendering, beside Herdr with its own home and terminals. macOS 26 or newer on Apple Silicon: open Herdr-VSH.pkg, or brew install --cask victor-software-house/forks/herdr-vsh. Derived from Herdr (https://github.com/herdrdev/herdr-app), Apache-2.0."
+      - if: always()
+        uses: victor-software-house/actions/macos-signing/delete@54aee9857878a4118c9f0db4966285ba19914c19 # main, 2026-10-27
