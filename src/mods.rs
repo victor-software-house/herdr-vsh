@@ -44,11 +44,15 @@ pub fn note_fonts(cx: &gpui::App) {
     *FONTS.lock().unwrap() = names;
 }
 
+/// Herdr VSH's name for its home, window app id and herdr-core session, so it
+/// runs beside Herdr and shares nothing with it.
+pub const APP_ID: &str = "herdr-vsh";
+
 /// The app's home: `$HERDR_APP_HOME` (tests, experiments), else
-/// `$XDG_CONFIG_HOME/herdr-app`, else `~/.config/herdr-app`, on every OS.
+/// `$XDG_CONFIG_HOME/herdr-vsh`, else `~/.config/herdr-vsh`, on every OS.
 pub fn app_dir() -> PathBuf {
     let env = |k: &str| std::env::var_os(k).filter(|v| !v.is_empty()).map(PathBuf::from);
-    env("HERDR_APP_HOME").unwrap_or_else(|| env("XDG_CONFIG_HOME").unwrap_or_else(|| home().join(".config")).join("herdr-app"))
+    env("HERDR_APP_HOME").unwrap_or_else(|| env("XDG_CONFIG_HOME").unwrap_or_else(|| home().join(".config")).join(APP_ID))
 }
 
 pub fn mods_dir() -> PathBuf {
