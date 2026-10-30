@@ -1,0 +1,53 @@
+kitty-file-media
+
+From: Victor Araújo <victor@victor-software-house.com>
+
+Downstream-Reason: Accept kitty images sent by file path, temporary file or shared memory, as Ghostty does, so Claude Code image previews draw.
+Upstream-Status: not-submitted
+Drop-When: Upstream herdr-app enables the libghostty-vt kitty file, temporary file and shared memory media.
+---
+ src/vt.rs |   24 ++++++++++++++++++++++++
+ 1 file changed, 24 insertions(+)
+
+diff --git a/src/vt.rs b/src/vt.rs
+index ef57059358e56f0315a610d5f362eade4268c6b8..3aa41eaaea59df311eda7971403c2baa5e5df140 100644
+--- a/src/vt.rs
++++ b/src/vt.rs
+@@ -426,6 +426,14 @@ impl Vt {
+             // No read callback: programs can never read the local clipboard.
+             let images: u64 = 128 << 20;
+             ghostty_terminal_set(term, GHOSTTY_TERMINAL_OPT_KITTY_IMAGE_STORAGE_LIMIT, &images as *const _ as *const c_void);
++            // Images may also come by path or shared memory, as in Ghostty: Claude Code sends previews by path.
++            let media = true;
++            ghostty_terminal_set(term, GHOSTTY_TERMINAL_OPT_KITTY_IMAGE_MEDIUM_FILE, &media as *const _ as *const c_void);
++            ghostty_terminal_set(term, GHOSTTY_TERMINAL_OPT_KITTY_IMAGE_MEDIUM_SHARED_MEM, &media as *const _ as *const c_void);
++            let tmp = std::env::temp_dir();
++            let tmp = tmp.to_string_lossy();
++            let tmp = GhosttyString { ptr: tmp.as_ptr(), len: tmp.len() };
++            ghostty_terminal_set(term, GHOSTTY_TERMINAL_OPT_KITTY_IMAGE_MEDIUM_TEMP_FILE, &tmp as *const _ as *const c_void);
+ 
+             ghostty_render_state_update(state, term);
+             let mut colors = GhosttyRenderStateColors { size: std::mem::size_of::<GhosttyRenderStateColors>(), ..Default::default() };
+@@ -1704,6 +1712,22 @@ mod tests {
+         assert_eq!((p[0].width, p[0].height, p[0].offset), (16, 16, [0, 4]));
+     }
+ 
++    #[test]
++    fn kitty_images_load_from_a_file_path() {
++        use base64::Engine;
++        let path = std::env::temp_dir().join(format!("herdr-kitty-file-{}.rgb", std::process::id()));
++        std::fs::write(&path, [255u8, 0, 0]).unwrap();
++        let mut vt = Vt::new(20, 5);
++        vt.resize(20, 5, 8, 16);
++        let name = base64::engine::general_purpose::STANDARD.encode(path.to_string_lossy().as_bytes());
++        vt.write(format!("\x1b_Ga=T,t=f,f=24,s=1,v=1,i=9,q=2;{name}\x1b\\").as_bytes());
++        vt.frame();
++        let p = vt.placements();
++        std::fs::remove_file(&path).unwrap();
++        assert_eq!(p.len(), 1, "{p:?}");
++        assert_eq!(vt.image_bgra(9, p[0].source).unwrap().2[..], [0, 0, 255, 255]);
++    }
++
+     #[test]
+     fn kitty_placeholder_cells_place_their_image() {
+         let mut vt = Vt::new(10, 5);
