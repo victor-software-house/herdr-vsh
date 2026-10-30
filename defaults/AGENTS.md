@@ -16,13 +16,13 @@ from the same parts you have.
 
 ## Two programs
 
-- **`herdr-app`**, the window: spaces, tabs, layouts, panels.
+- **`herdr-vsh`**, the window: spaces, tabs, layouts, panels.
 - **herdr-core (`hc`)**, which runs every terminal and agent. They keep
   running when the window closes or updates. You can use `hc` yourself:
   start a terminal, read its screen, send it text, wait for an agent
   (`hc --help`). The Herdr app is one client of it.
 
-`herdr-app` controls this app; `hc` controls herdr-core.
+`herdr-vsh` controls this app; `hc` controls herdr-core.
 
 ## What you can and can't do
 
@@ -51,7 +51,7 @@ commands. They're rewritten on every start to match this version.
 - Edits apply at once. If a file is invalid, the app keeps the last good
   version and writes why to `<name>.error` (`layout.error`, `keys.error`,
   `settings.error`, `programs.error`). Check after every edit.
-- `herdr-app check <mod folder>` loads a mod once and reports what's wrong.
+- `herdr-vsh check <mod folder>` loads a mod once and reports what's wrong.
   Never call a mod done without a passing check.
 - **Escape hatch:** `ctrl-alt-shift-escape` always works: it sets the shown
   layout and `keys.json` aside (`*.reset-<time>`) and goes back to the
@@ -59,7 +59,7 @@ commands. They're rewritten on every start to match this version.
 
 ## Seeing the window
 
-`herdr-app shot [file.png]` saves the last rendered window frame as a PNG
+`herdr-vsh shot [file.png]` saves the last rendered window frame as a PNG
 and prints its absolute path (default: `herdr-shot.png` in your current
 folder). Use it when debugging mod UIs: inspect spacing, colors, terminal
 images, overlays, popups and floats. It captures the app, not the desktop,
@@ -90,7 +90,7 @@ If `shared.json` is invalid, Herdr logs a warning and keeps it as
 
 Every layout shows the same world; a layout may show less, never a
 different one. Each machine keeps its spaces, tabs and splits in its core's
-`herdr-app` document. Connected screens share that layout and live terminals,
+`herdr-vsh` document. Connected screens share that layout and live terminals,
 not their focus, zoom or attention. Use commands to change structure; there
 is no `spaces.json`. On simultaneous edits the newest accepted document wins
 (no merging); structural commands fail while that machine's layout is unavailable.
@@ -180,8 +180,8 @@ look. The theme picker overrides any layout. To change a shipped layout's
 look beyond that, or its structure/code, clone it and edit the clone:
 
 ```sh
-herdr-app do layout.clone '{"name":"main","as":"my-layout"}'
-herdr-app do mod.clone '{"name":"files","as":"my-files"}'
+herdr-vsh do layout.clone '{"name":"main","as":"my-layout"}'
+herdr-vsh do mod.clone '{"name":"files","as":"my-files"}'
 ```
 
 The default clone name is `<name>-copy`; an existing name is refused.
@@ -423,7 +423,7 @@ folder on GitHub):
    recipe instead.
 4. A mod's `keys.json`: merge it into the person's. Add its sections and
    keys, and ask before replacing a key they already use.
-5. `herdr-app check` each mod; for a layout, then `layout.switch {name}`.
+5. `herdr-vsh check` each mod; for a layout, then `layout.switch {name}`.
    The person's own layout stays as it was; `ctrl-shift-l` switches back,
    and deleting the files removes it.
 
@@ -486,10 +486,10 @@ the build doesn't do.
 ## Commands
 
 The one way to change anything; keys, mods (`run(name, args)`), menus and
-you use the same list. `herdr-app commands` prints every one with its arguments
+you use the same list. `herdr-vsh commands` prints every one with its arguments
 (which are required) and what it does. Unknown argument names are errors and list
 valid names; they never fall back to the current target. For example, closing a
-space uses `herdr-app do space.close --id <id> --confirmed true`, not `--space`.
+space uses `herdr-vsh do space.close --id <id> --confirmed true`, not `--space`.
 The main ones:
 
 - Spaces: `space.new {name?, folder?, tab?, argv?, task?, machine?}`
@@ -555,14 +555,14 @@ command says what's missing.
 From a shell:
 
 ```sh
-herdr-app do tab.new --name "fix login" --argv '["claude"]' --task "look at the login bug"
-herdr-app do pane.split:right
-herdr-app ls          # spaces, their tabs and terminals (sub-agents under their parent)
-herdr-app status      # what's on screen: layout, focus, overlays, zoom, errors from files and mods
-herdr-app commands    # every command and its arguments
+herdr-vsh do tab.new --name "fix login" --argv '["claude"]' --task "look at the login bug"
+herdr-vsh do pane.split:right
+herdr-vsh ls          # spaces, their tabs and terminals (sub-agents under their parent)
+herdr-vsh status      # what's on screen: layout, focus, overlays, zoom, errors from files and mods
+herdr-vsh commands    # every command and its arguments
 ```
 
-`herdr-app do` prints what the command made (`{ "space", "tab",
+`herdr-vsh do` prints what the command made (`{ "space", "tab",
 "terminal" }`, `{ "pane", "terminal" }`) or `{ "error": "..." }` and exits 1.
 
 ## The person: `settings.json`
@@ -579,7 +579,7 @@ What's about the user, never a look:
   When an agent needs the person, or finishes while they aren't looking at
   it, Herdr plays a sound and (unless they're looking) posts a toast that
   goes there when clicked. `done` / `blocked` replace the bundled MP3s
-  (path absolute or relative to `~/.config/herdr-app`).
+  (path absolute or relative to `~/.config/herdr-vsh`).
 - `core`: the herdr-core binary to use, when it isn't where Herdr looks
   (PATH, the login shell's PATH, `~/.local/bin`, Homebrew, mise, Nix,
   cargo). Read at start.
@@ -625,7 +625,7 @@ What's about the user, never a look:
   macOS releases require Apple Silicon; Intel Macs must build from source.
   Keep signed macOS bundles unchanged: don't edit their Info.plist or
   re-sign them. On launch, an installed macOS bundle creates or repairs its
-  own `~/.local/bin/herdr-app` symlink, leaving personal files and other
+  own `~/.local/bin/herdr-vsh` symlink, leaving personal files and other
   apps' links alone. Disk-image and translocated launches don't create it.
   Finder launches load the login shell's PATH, with the usual install
   folders as a fallback.
@@ -694,7 +694,7 @@ has 120 programs (agents, editors, runtimes, tools, databases, infra);
 ## Mods: `mods/<name>/`
 
 ```
-~/.config/herdr-app/mods/<name>/
+~/.config/herdr-vsh/mods/<name>/
   main.js       the mod (required)
   mod.json    where it first appears: { "place": "right" | "left" | "top" | "bottom" | "none", "size": 320 }
   *.js, *.svg   more modules ("./ui.js"), its own icons
@@ -706,7 +706,7 @@ has 120 programs (agents, editors, runtimes, tools, databases, infra);
   (not files the app writes: `jsconfig.json`, `.d.ts`, hidden ones,
   `node_modules`). The old build's tasks and timers stop: a loop ends at its
   next `cx` use. A broken save keeps the old version running and shows in
-  `herdr-app status`; its top-level code has already run, so keep side effects
+  `herdr-vsh status`; its top-level code has already run, so keep side effects
   on `globalThis` out of the module's top level.
 - A copy starts the first time it shows, then stays alive while its block is in
   the layout, shown or not (a hidden column, the other child of a stack, a pane
@@ -714,7 +714,7 @@ has 120 programs (agents, editors, runtimes, tools, databases, infra);
   timers keep running while hidden, so poll gently. Another layout starts its
   mods fresh (pane mods belong to their tab and stay); a block removed or given
   another mod or props starts over. `<mod>.<command>` reaches shown copies only.
-- Images and SVGs are referenced from `~/.config/herdr-app`:
+- Images and SVGs are referenced from `~/.config/herdr-vsh`:
   `image("mods/<name>/logo.svg")` (full color), `svg("mods/<name>/icon.svg")`
   (tinted with the text color).
 - The defaults are mods too, read them as examples: `spaces`, `agents`,
@@ -736,7 +736,7 @@ has 120 programs (agents, editors, runtimes, tools, databases, infra);
 ### Check before you finish
 
 ```sh
-herdr-app check ~/.config/herdr-app/mods/<name>
+herdr-vsh check ~/.config/herdr-vsh/mods/<name>
 ```
 
 Loads the mod, renders it once, exits nonzero with the exact error. Run it
@@ -905,14 +905,14 @@ All of it is in `herdr.d.ts`. In short:
 
 Mods are trusted code: commands and network access (including `fetch`) are unrestricted.
 Other built-ins: `localStorage` (per mod copy), `console.log`, `fetch`,
-`import * as fs from "fs/promises"` (read in home, write under `~/.config/herdr-app`).
+`import * as fs from "fs/promises"` (read in home, write under `~/.config/herdr-vsh`).
 
 ## herdr-core (`hc`)
 
-`herdr-app --skill` prints the manual for driving this window;
+`herdr-vsh --skill` prints the manual for driving this window;
 `hc --skill` prints the manual for running and coordinating programs and agents,
 including a small herdr-core skill you can install with the user's permission.
-`herdr-app commands` lists app commands and arguments without needing an open window.
+`herdr-vsh commands` lists app commands and arguments without needing an open window.
 
 - `hc ls --json`, `hc read t3 --lines 50`, `hc run --json --cwd <dir> --label k=v -- <cmd>`,
   `hc label t3 k=v`, `hc send t3 "text"`, `hc wait t3`. `hc --help` for all.
