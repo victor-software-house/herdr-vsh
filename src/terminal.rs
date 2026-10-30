@@ -57,8 +57,8 @@ struct Grid {
     /// Top-left of the cell grid in window coordinates, from the last paint.
     origin: Point<Pixels>,
     buttons_down: Vec<MouseButton>,
-    /// Kitty images uploaded for drawing, by (image, generation, source rect).
-    images: HashMap<(u32, u64, [u32; 4]), Arc<RenderImage>>,
+    /// Kitty images uploaded for drawing, whole, by (image, generation).
+    images: HashMap<(u32, u64), Arc<RenderImage>>,
     /// Where the pointer is over the pane.
     hover: Option<Point<Pixels>>,
     /// The link under the pointer to underline: (row, first column, last column).
@@ -1121,27 +1121,63 @@ fn paint_grid(bounds: Bounds<Pixels>, grid: &Rc<RefCell<Grid>>, focused: bool, w
     g.origin = origin;
     let frame = g.vt.frame();
     let placements = g.vt.placements();
-    let mut images: Vec<(bool, Bounds<Pixels>, Arc<RenderImage>)> = Vec::new();
-    let mut keep = std::collections::HashSet::new();
+    let dev = device_cell(cell, scale);
+    // Each placement: under the text or not, the part shown, and where the whole image would sit.
+    let mut images: Vec<(bool, Bounds<Pixels>, Bounds<Pixels>, Arc<RenderImage>)> = Vec::new();
     for p in &placements {
-        let key = (p.image, p.generation, p.source);
-        keep.insert(key);
+        let key = (p.image, p.generation);
         if !g.images.contains_key(&key)
-            && let Some((w, h, bgra)) = g.vt.image_bgra(p.image, p.source)
+            && let Some((w, h, bgra)) = g.vt.image_bgra(p.image, [0, 0, u32::MAX, u32::MAX])
             && let Some(buf) = image::RgbaImage::from_raw(w, h, bgra)
         {
             g.images.insert(key, Arc::new(RenderImage::new(smallvec::smallvec![image::Frame::new(buf)])));
         }
         if let Some(img) = g.images.get(&key) {
+            // libghostty measures in device pixels, over whole-pixel cells (`device_cell`).
+            // Placeholder images fill whole cells, so they scale to this view's cells;
+            // a placed image keeps its own pixel size.
+            let (ux, uy) = if p.virtual_cells {
+                (f32::from(cell.width) / dev.0 as f32, f32::from(cell.height) / dev.1 as f32)
+            } else {
+                (1.0 / scale, 1.0 / scale)
+            };
             let pos = origin
-                + point(cell.width * p.col as f32 + px(p.offset[0] as f32), cell.height * p.row as f32 + px(p.offset[1] as f32));
-            images.push((p.below_text, Bounds::new(pos, size(px(p.width as f32), px(p.height as f32))), img.clone()));
+                + point(cell.width * p.col as f32 + px(p.offset[0] as f32 * ux), cell.height * p.row as f32 + px(p.offset[1] as f32 * uy));
+            let (w, h) = (p.width as f32 * ux, p.height as f32 * uy);
+            let shown = Bounds::new(pos, size(px(w), px(h)));
+            let [sx, sy, sw, sh] = p.source;
+            let (kx, ky) = (w / sw.max(1) as f32, h / sh.max(1) as f32);
+            let whole = img.size(0);
+            let whole = Bounds::new(
+                pos - point(px(sx as f32 * kx), px(sy as f32 * ky)),
+                size(px(whole.width.0 as f32 * kx), px(whole.height.0 as f32 * ky)),
+            );
+            // A placed image can start above the first row (scrolled, or replayed
+            // partly scrolled off): only the part inside the terminal is drawn, and
+            // `whole` still maps the texture onto that part.
+            let shown = shown.intersect(&bounds);
+            if shown.size.width <= px(0.0) || shown.size.height <= px(0.0) {
+                continue;
+            }
+            images.push((p.below_text, shown, whole, img.clone()));
         }
     }
-    g.images.retain(|k, _| keep.contains(k));
+    // As in Ghostty, a texture lives as long as its image: one replaced or deleted frees it.
+    let mut gone = Vec::new();
+    let state = &mut *g;
+    state.images.retain(|&(id, generation), img| {
+        let live = state.vt.image_generation(id) == Some(generation);
+        if !live {
+            gone.push(img.clone());
+        }
+        live
+    });
     let link_spans = g.link_spans.clone();
     let marked = g.marked.clone();
     drop(g);
+    for img in gone {
+        let _ = window.drop_image(img);
+    }
 
     window.paint_quad(fill(bounds, hsla(frame.bg).opacity(crate::settings::get().terminal_opacity)));
     let at = |x: usize, y: usize| origin + point(cell.width * x as f32, cell.height * y as f32);
@@ -1152,16 +1188,13 @@ fn paint_grid(bounds: Bounds<Pixels>, grid: &Rc<RefCell<Grid>>, focused: bool, w
         Bounds::new(point(x0, y0), size(x1 - x0, y1 - y0))
     };
     let paint_images = |below: bool, window: &mut Window| {
-        for (below_text, b, img) in &images {
+        for (below_text, shown, whole, img) in &images {
             if *below_text == below {
                 // Placeholder images arrive one slice per row: snapped edges meet without seams.
-                let b = snap_box(*b);
-                let _ = window.paint_image(b, b, Corners::default(), img.clone(), 0, false);
+                let _ = window.paint_image(snap_box(*shown), *whole, Corners::default(), img.clone(), 0, false);
             }
         }
     };
-    paint_images(true, window);
-
     // Each row's drawing is built once and painted again while the row is the
     // same (`Vt::frame` keeps a row libghostty didn't change): an agent's spinner
     // line rebuilds one row, not the whole screen.
@@ -1173,12 +1206,9 @@ fn paint_grid(bounds: Bounds<Pixels>, grid: &Rc<RefCell<Grid>>, focused: bool, w
         painted.clear();
     }
     painted.truncate(frame.rows.len());
-    for (y, row) in frame.rows.iter().enumerate() {
-        let fresh;
-        let ops = if frame.all {
-            fresh = row_ops(row, cell, window);
-            &fresh
-        } else {
+    let fresh: Vec<Vec<RowOp>> = if frame.all { frame.rows.iter().map(|row| row_ops(row, cell, window)).collect() } else { Vec::new() };
+    if !frame.all {
+        for (y, row) in frame.rows.iter().enumerate() {
             if painted.get(y).is_none_or(|(r, _)| !Rc::ptr_eq(r, row)) {
                 let ops = row_ops(row, cell, window);
                 if y < painted.len() {
@@ -1187,14 +1217,23 @@ fn paint_grid(bounds: Bounds<Pixels>, grid: &Rc<RefCell<Grid>>, focused: bool, w
                     painted.push((row.clone(), ops));
                 }
             }
-            &painted[y].1
-        };
-        for op in ops {
+        }
+    }
+    let rows: Vec<&Vec<RowOp>> = if frame.all { fresh.iter().collect() } else { painted.iter().map(|(_, ops)| ops).collect() };
+    // As in Ghostty: cell backgrounds, then images under the text, then the text.
+    for (y, ops) in rows.iter().enumerate() {
+        for op in ops.iter() {
+            if let RowOp::Bg { from, to, color } = op {
+                let b = Bounds::new(at(*from, y), size(cell.width * (to - from) as f32, cell.height));
+                window.paint_quad(fill(snap_box(b), *color));
+            }
+        }
+    }
+    paint_images(true, window);
+    for (y, ops) in rows.iter().enumerate() {
+        for op in ops.iter() {
             match op {
-                RowOp::Bg { from, to, color } => {
-                    let b = Bounds::new(at(*from, y), size(cell.width * (to - from) as f32, cell.height));
-                    window.paint_quad(fill(snap_box(b), *color));
-                }
+                RowOp::Bg { .. } => {}
                 RowOp::Sprite { x, text, color } => crate::sprites::paint(text, Bounds::new(at(*x, y), cell), *color, window),
                 RowOp::Icon { x, offset, font, glyph, size, color } => {
                     let _ = window.paint_glyph(at(*x, y) + *offset, *font, *glyph, *size, *color);
@@ -1205,6 +1244,7 @@ fn paint_grid(bounds: Bounds<Pixels>, grid: &Rc<RefCell<Grid>>, focused: bool, w
             }
         }
     }
+    drop(rows);
     {
         let mut g = grid.borrow_mut();
         (g.painted, g.painted_with) = (painted, with);

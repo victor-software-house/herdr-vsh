@@ -141,6 +141,8 @@ pub struct Placement {
     pub z: i32,
     /// Drawn under the text, not over it.
     pub below_text: bool,
+    /// Placed by Unicode placeholder cells, so sized in whole cells.
+    pub virtual_cells: bool,
 }
 
 unsafe extern "C" fn on_write_pty(_t: GhosttyTerminal, userdata: *mut c_void, data: *const u8, len: usize) {
@@ -544,8 +546,11 @@ impl Vt {
                     get(GHOSTTY_RENDER_STATE_IMAGE_DATA_SOURCE_Y, &mut source[1] as *mut _ as *mut c_void);
                     get(GHOSTTY_RENDER_STATE_IMAGE_DATA_SOURCE_WIDTH, &mut source[2] as *mut _ as *mut c_void);
                     get(GHOSTTY_RENDER_STATE_IMAGE_DATA_SOURCE_HEIGHT, &mut source[3] as *mut _ as *mut c_void);
+                    let mut kind = GHOSTTY_RENDER_STATE_KITTY_PLACEMENT_KIND_FIXED;
+                    get(GHOSTTY_RENDER_STATE_IMAGE_DATA_KITTY_KIND, &mut kind as *mut _ as *mut c_void);
                     let below_text = layer != GHOSTTY_RENDER_STATE_IMAGE_LAYER_ABOVE_TEXT;
-                    out.push(Placement { image, generation, col, row, offset, width, height, source, z, below_text });
+                    let virtual_cells = kind == GHOSTTY_RENDER_STATE_KITTY_PLACEMENT_KIND_VIRTUAL;
+                    out.push(Placement { image, generation, col, row, offset, width, height, source, z, below_text, virtual_cells });
                 }
             }
             ghostty_render_state_image_iterator_free(it);
@@ -594,6 +599,18 @@ impl Vt {
             } else {
                 ghostty_terminal_set(self.term, GHOSTTY_TERMINAL_OPT_KITTY_IMAGE_MEDIUM_TEMP_FILE, std::ptr::null());
             }
+        }
+    }
+
+    /// A stored image's generation, which changes whenever its pixels do; None once it's deleted.
+    pub fn image_generation(&self, id: u32) -> Option<u64> {
+        unsafe {
+            let mut g: GhosttyKittyGraphics = std::ptr::null_mut();
+            ghostty_terminal_get(self.term, GHOSTTY_TERMINAL_DATA_KITTY_GRAPHICS, &mut g as *mut _ as *mut c_void);
+            let img = (!g.is_null()).then(|| ghostty_kitty_graphics_image(g, id)).filter(|i| !i.is_null())?;
+            let mut generation = 0u64;
+            ghostty_kitty_graphics_image_get(img, GHOSTTY_KITTY_IMAGE_DATA_GENERATION, &mut generation as *mut _ as *mut c_void);
+            (generation != 0).then_some(generation)
         }
     }
 
@@ -1740,6 +1757,18 @@ mod tests {
         std::fs::remove_file(&path).unwrap();
         assert_eq!(local, (1, Some(vec![0, 0, 255, 255])));
         assert_eq!(remote, (0, None), "a program on another machine sends pixels");
+    }
+
+    #[test]
+    fn kitty_image_generation_follows_replacement_and_deletion() {
+        let mut vt = Vt::new(10, 5);
+        let send = b"\x1b_Ga=t,t=d,f=24,i=4,s=1,v=1,q=2;////\x1b\\";
+        vt.write(send);
+        let first = vt.image_generation(4).unwrap();
+        vt.write(send);
+        assert_ne!(vt.image_generation(4), Some(first), "new pixels, new generation");
+        vt.write(b"\x1b_Ga=d,d=I,i=4,q=2\x1b\\");
+        assert_eq!(vt.image_generation(4), None);
     }
 
     #[test]
