@@ -17,7 +17,7 @@ export function hc(args: string[]): Promise<ExecResult>;
 
 /** The user's home directory. */
 export function home(): string;
-/** The app's folder (`~/.config/herdr-app`, or `$HERDR_APP_HOME`): settings.json, keys.json, layouts/. */
+/** The app's folder (`~/.config/herdr-vsh`, or `$HERDR_APP_HOME`): settings.json, keys.json, layouts/. */
 export function appHome(): string;
 
 /** Reads UTF-8 text (up to 1 MiB), or null if absent. Runs off the UI thread.
@@ -37,11 +37,11 @@ export function knownAgents(options?: { on?: string | null }): Promise<(Program 
 export function pickFolder(options?: { prompt?: string }): Promise<string | null>;
 
 /** Plays "done" or "blocked" (the attention sounds, or the files settings.json names), or an MP3
- *  file (absolute, or relative to ~/.config/herdr-app). */
+ *  file (absolute, or relative to ~/.config/herdr-vsh). */
 export function playSound(sound: string): null;
 
 /**
- * Runs a command, the same ones keys.json binds (`herdr-app commands` lists them all with their
+ * Runs a command, the same ones keys.json binds (`herdr-vsh commands` lists them all with their
  * arguments). Structural commands fail while their machine's layout is unavailable.
  * Mod props are stored as given, never machine-qualified. Most commands apply right after
  * the call returns; terminal.keep/park finish in the background and toast on failure.
@@ -230,7 +230,7 @@ export function layout(): unknown;
 /** The names of every layout in layouts/ (main first). */
 export function layouts(): string[];
 
-/** Every command the app runs: its name, arguments and what it does (as `herdr-app commands`).
+/** Every command the app runs: its name, arguments and what it does (as `herdr-vsh commands`).
  *  Mods' own `<mod>.<command>`s aren't listed. */
 export function commands(): { name: string; args: { name: string; required: boolean }[]; about: string }[];
 

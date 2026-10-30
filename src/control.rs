@@ -1,5 +1,5 @@
-//! `herdr-app do <command> [--arg value ... | json]`, `herdr-app ls`, `herdr-app commands`
-//! and `herdr-app status`: drive a running window from a shell (agents, tests)
+//! `herdr-vsh do <command> [--arg value ... | json]`, `herdr-vsh ls`, `herdr-vsh commands`
+//! and `herdr-vsh status`: drive a running window from a shell (agents, tests)
 //! over `$HERDR_APP_HOME/herdr-app.sock`, one JSON line each way.
 
 use crate::mods::{self, Request};
@@ -20,7 +20,7 @@ fn socket() -> PathBuf {
 pub fn listen(tx: async_channel::Sender<Request>) {
     let path = socket();
     if UnixStream::connect(&path).is_ok() {
-        tracing::warn!("another Herdr is serving {}; `herdr-app do` goes there", path.display());
+        tracing::warn!("another Herdr is serving {}; `herdr-vsh do` goes there", path.display());
         return;
     }
     let _ = std::fs::remove_file(&path);
@@ -94,7 +94,7 @@ pub fn client(args: &[String]) -> i32 {
             Ok(a) => json!({ "do": command, "args": a }),
             Err(e) => return fail(&e),
         },
-        _ => return fail("usage: herdr-app ls | herdr-app commands | herdr-app status | herdr-app shot [file.png] | herdr-app do <command> [--arg value ... | json]"),
+        _ => return fail("usage: herdr-vsh ls | herdr-vsh commands | herdr-vsh status | herdr-vsh shot [file.png] | herdr-vsh do <command> [--arg value ... | json]"),
     };
     let mut stream = match UnixStream::connect(socket()) {
         Ok(s) => s,
@@ -173,7 +173,7 @@ pub fn save_shot(window: &gpui::Window, path: &std::path::Path) -> anyhow::Resul
 }
 
 fn fail(message: &str) -> i32 {
-    eprintln!("herdr-app: {message}");
+    eprintln!("herdr-vsh: {message}");
     2
 }
 
