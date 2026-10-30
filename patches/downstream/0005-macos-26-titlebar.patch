@@ -1,0 +1,182 @@
+macos-26-titlebar
+
+From: Victor Araújo <victor@victor-software-house.com>
+
+Downstream-Reason: Fit the macOS 26 titlebar: hide the background macOS 26 and later draw over the transparent titlebar, as Ghostty does, and leave room for the wider-spaced window buttons at any zoom.
+Upstream-Status: not-submitted
+Drop-When: GPUI or Herdr hides the macOS 26 titlebar background and sizes the window-button gap for macOS 26 itself.
+---
+ defaults/mods/agents/main.js           |    4 ++--
+ defaults/mods/tabs/main.js             |    2 +-
+ defaults/mods/terminals-bar/main.js    |    8 +++++---
+ defaults/mods/workspace-chrome/main.js |    6 +++---
+ src/mods/render_tests.rs               |    6 +++---
+ src/window.rs                          |    5 +++--
+ vendor/gpui-pre-macos/src/window.rs    |   28 ++++++++++++++++++++++++++++
+ 7 files changed, 45 insertions(+), 14 deletions(-)
+
+diff --git a/defaults/mods/agents/main.js b/defaults/mods/agents/main.js
+index 4ec2d54cdc9a7b4013cc4308745c3d813adedac9..8485a15d11c2ed94195e053fe88e2cc35ea0d53d 100644
+--- a/defaults/mods/agents/main.js
++++ b/defaults/mods/agents/main.js
+@@ -3,7 +3,7 @@
+ 
+ import { View, div, image, svg } from "gpui-kit";
+ import { v_flex, h_flex } from "gpui-base";
+-import { agents, terminals, panes, focused, spaces, run, theme, shared, setShared, setAgentOrder, openOverlay, closeOverlay, props, window, layout } from "herdr";
++import { agents, terminals, panes, focused, spaces, run, theme, shared, setShared, setAgentOrder, openOverlay, closeOverlay, props, window, layout, settings } from "herdr";
+ 
+ function find(node, id) {
+   if (node?.id === id) return node;
+@@ -23,7 +23,7 @@ function toggleSidebar() {
+   if (!narrow()) setShared("sidebar.width", width);
+   // Mods edited before the rail went by width still read the flag.
+   setShared("sidebar.collapsed", !narrow());
+-  run("layout.resize", { id: "sidebar", px: narrow() ? (shared("sidebar.width") ?? 268) : window()?.platform === "macos" ? 76 : 44 });
++  run("layout.resize", { id: "sidebar", px: narrow() ? (shared("sidebar.width") ?? 268) : window()?.platform === "macos" ? Math.ceil(((layout()?.traffic_lights?.[0] ?? 12) + 70) / settings().zoom) : 44 });
+ }
+ 
+ const clean = (s) => (s ?? "").replace(/^[^\p{L}\p{N}]+/u, "").trim();
+diff --git a/defaults/mods/tabs/main.js b/defaults/mods/tabs/main.js
+index aed2f8ba3a0cbc3f2d50a407516ca9f90ec7c011..76369a523ba48005783ac76be5d30742adbf458f 100644
+--- a/defaults/mods/tabs/main.js
++++ b/defaults/mods/tabs/main.js
+@@ -74,7 +74,7 @@ export default class Tabs extends View {
+     const root = layout(), sidebar = find(root, "sidebar"), w = window();
+     // Old saved rails and a dragged-narrow sidebar can be smaller than the window buttons.
+     const lightsPadding = w?.platform === "macos" && w.titlebar === "none" && !w.fullscreen && root?.traffic_lights
+-      ? Math.max(10, (root.traffic_lights[0] + 64) / settings().zoom - (sidebar?.hidden ? 0 : sidebar?.size?.px ?? 0))
++      ? Math.max(10, (root.traffic_lights[0] + 70) / settings().zoom - (sidebar?.hidden ? 0 : sidebar?.size?.px ?? 0))
+       : 10;
+     const panel = find(root, "panel"), body = find(root, "panel-body");
+     const enabled = shared("workspace.panels") ?? ["files", "changes"];
+diff --git a/defaults/mods/terminals-bar/main.js b/defaults/mods/terminals-bar/main.js
+index 265db8b68b28c7f7118d8cffabbcbed97615b3d4..b38dfaed834676d806062e37d8b5a2edd73948f1 100644
+--- a/defaults/mods/terminals-bar/main.js
++++ b/defaults/mods/terminals-bar/main.js
+@@ -2,7 +2,7 @@
+ 
+ import { View, div, svg, image } from "gpui-kit";
+ import { h_flex } from "gpui-base";
+-import { spaces, panes, run, theme, home, openOverlay, window as win } from "herdr";
++import { spaces, panes, run, theme, home, openOverlay, window as win, layout, settings } from "herdr";
+ 
+ const C = {
+   tray: "#1d1f22",
+@@ -137,8 +137,10 @@ export default class TerminalsBar extends View {
+       .size_full()
+       .gap(8)
+       .items_center()
+-      // macOS: the window buttons sit here (the layout's traffic_lights).
+-      .when(w.platform === "macos" && w.titlebar === "none" && !w.fullscreen, (el) => el.pl(72))
++      // macOS: the window buttons sit here (the layout's traffic_lights), in window pixels, so unzoom them.
++      .when(w.platform === "macos" && w.titlebar === "none" && !w.fullscreen, (el) =>
++        el.pl(((layout()?.traffic_lights?.[0] ?? 16) + 70) / settings().zoom),
++      )
+       .child(
+         own(h_flex())
+           .id("tm-space")
+diff --git a/defaults/mods/workspace-chrome/main.js b/defaults/mods/workspace-chrome/main.js
+index 511e122ced643ca20de81569471c48b42b36166c..519d9c741271aeacdb9f9c2db69c17b86bdbef95 100644
+--- a/defaults/mods/workspace-chrome/main.js
++++ b/defaults/mods/workspace-chrome/main.js
+@@ -1,6 +1,6 @@
+ import { View, div, image, svg } from "gpui-kit";
+ import { h_flex, v_flex } from "gpui-base";
+-import { theme, run, props, window, shared, setShared, updates, layout } from "herdr";
++import { theme, run, props, window, shared, setShared, updates, layout, settings } from "herdr";
+ 
+ function find(node, id) {
+   if (node?.id === id) return node;
+@@ -20,7 +20,7 @@ function toggleSidebar() {
+   if (!narrow()) setShared("sidebar.width", width);
+   // Mods edited before the rail went by width still read the flag.
+   setShared("sidebar.collapsed", !narrow());
+-  run("layout.resize", { id: "sidebar", px: narrow() ? (shared("sidebar.width") ?? 268) : window()?.platform === "macos" ? 76 : 44 });
++  run("layout.resize", { id: "sidebar", px: narrow() ? (shared("sidebar.width") ?? 268) : window()?.platform === "macos" ? Math.ceil(((layout()?.traffic_lights?.[0] ?? 12) + 70) / settings().zoom) : 44 });
+ }
+ 
+ export default class WorkspaceChrome extends View {
+@@ -43,7 +43,7 @@ export default class WorkspaceChrome extends View {
+         .child(row("machine", "plus", "Add machine", true, () => run("mod.open", { name: "machine-add" })));
+     }
+     return h_flex().size_full().bg(t.chrome).pl(collapsed ? 6 : 14).pr(10).gap(4).items_center().text_size(13.5)
+-      .when(window()?.platform === "macos" && !collapsed, el => el.pl(76))
++      .when(window()?.platform === "macos" && !collapsed, el => el.pl(((layout()?.traffic_lights?.[0] ?? 12) + 70) / settings().zoom))
+       .when(!collapsed, el => el.child(h_flex().flex_1().gap(8).items_center().child(image("frame/welcome/herdr.png").size(20).rounded(5)).child(div().font_semibold().text_color(t.foreground).child("Herdr"))))
+       .when(!collapsed, el => el.child(this.button("search", svg("mods/workspace-chrome/search.svg").size(15), () => run("mod.open", { name: "picker" }))))
+       // On the macOS rail the traffic lights fill the row; the agents list's » unfolds it.
+diff --git a/src/mods/render_tests.rs b/src/mods/render_tests.rs
+index e35815a63ddcccf09a790324ee95ba4f2f88329e..57549f91f5bd90d2ad54a6e6a4d85d064ca1464c 100644
+--- a/src/mods/render_tests.rs
++++ b/src/mods/render_tests.rs
+@@ -282,10 +282,10 @@ fn tabs_leave_room_for_macos_traffic_lights(cx: &mut TestAppContext) {
+     cx.update(gpui_shell::init);
+     let staged = Staged::new();
+     for (platform, titlebar, fullscreen, width, lights, zoom, expected) in [
+-        ("macos", "none", false, 44, true, 1.0, 32),
+-        ("macos", "none", false, 44, true, 0.5, 108),
++        ("macos", "none", false, 44, true, 1.0, 38),
++        ("macos", "none", false, 44, true, 0.5, 120),
+         ("macos", "none", false, 44, true, 2.0, 10),
+-        ("macos", "none", false, 60, true, 1.0, 16),
++        ("macos", "none", false, 60, true, 1.0, 22),
+         ("macos", "none", false, 76, true, 1.0, 10),
+         ("macos", "none", false, 268, true, 1.0, 10),
+         ("macos", "none", true, 44, true, 1.0, 10),
+diff --git a/src/window.rs b/src/window.rs
+index dcd4d8976a2a6ba25617ecc309bdf7d254519e07..c5d8569f2ac98e68582fb5f5d122f311bfdc1c73 100644
+--- a/src/window.rs
++++ b/src/window.rs
+@@ -31,8 +31,9 @@ use std::time::{Duration, Instant, SystemTime};
+ const HEADER_HEIGHT: f32 = 30.0;
+ const HANDLE: f32 = 6.0;
+ 
+-// The three native buttons plus their trailing breathing room (also used by the tabs mod).
+-const TRAFFIC_LIGHT_WIDTH: f32 = 64.0;
++// The three native buttons plus their trailing breathing room (also used by the tabs and terminals-bar mods).
++// macOS 26 spaces the 14 px buttons 9 px apart: 60 px of buttons, then 10 px of room.
++const TRAFFIC_LIGHT_WIDTH: f32 = 70.0;
+ 
+ fn traffic_light_divider_inset(n: &Node, axis: Axis, index: usize, macos: bool, zoom: f32) -> f32 {
+     if !macos || axis != Axis::Row || n.titlebar != Some(crate::layout::Titlebar::Layout) {
+diff --git a/vendor/gpui-pre-macos/src/window.rs b/vendor/gpui-pre-macos/src/window.rs
+index 1ba661cf773822aca98bb5a591b11be7e7dc4993..bdc5216099af2aa6cece6a94244722940edb5135 100644
+--- a/vendor/gpui-pre-macos/src/window.rs
++++ b/vendor/gpui-pre-macos/src/window.rs
+@@ -719,7 +719,35 @@ struct MacWindowState {
+ }
+ 
+ impl MacWindowState {
++    /// HERDR: macOS 26 and later draw a titlebar background over full-size content even
++    /// when the titlebar is transparent. Hide it, as Ghostty does
++    /// (`TransparentTitlebarTerminalWindow.swift`); AppKit can restore it, so this runs
++    /// on every traffic light layout pass.
++    fn hide_titlebar_background(&self) {
++        if !self.transparent_titlebar
++            || !is_macos_version_at_least(NSOperatingSystemVersion::new(26, 0, 0))
++        {
++            return;
++        }
++        fn find(view: &Objc2NSView) -> Option<Retained<Objc2NSView>> {
++            view.subviews().iter().find_map(|sub| {
++                if sub.class().name() == c"NSTitlebarBackgroundView" {
++                    Some(sub)
++                } else {
++                    find(&sub)
++                }
++            })
++        }
++        let Some(buttons) = self.traffic_light_buttons() else {
++            return;
++        };
++        if let Some(background) = Self::titlebar_container(&buttons.close).and_then(|c| find(&c)) {
++            background.setHidden(true);
++        }
++    }
++
+     fn move_traffic_light(&mut self) {
++        self.hide_titlebar_background();
+         if let Some(traffic_light_position) = self.traffic_light_position {
+             if self.is_fullscreen() && !self.is_exiting_fullscreen {
+                 self.restore_traffic_light();
