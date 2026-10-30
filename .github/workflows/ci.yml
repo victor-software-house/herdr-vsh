@@ -1,4 +1,4 @@
-# Build and test every supported platform. The fork publishes no releases.
+# Build and test every supported platform. Releases are release.yml, from fork-v* tags.
 #
 # Rust caches use one pinned toolchain and only downstream pushes save, so PR
 # caches can't evict the ones everybody restores. setup-zig caches separately.

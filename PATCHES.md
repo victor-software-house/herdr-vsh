@@ -16,7 +16,8 @@ Base: `refs/tags/v0.1.9` (`3e32d75e7aa2327d7b1f89caf3d5dafd1f44f1b2`)
 | 8 | `kitty-file-media` | source | Accept kitty images sent by file path, temporary file or shared memory, as Ghostty does, so Claude Code image previews draw. | not-submitted | Upstream herdr-app enables the libghostty-vt kitty file, temporary file and shared memory media. |
 | 9 | `kitty-image-release` | source | Free the GPU texture of a kitty image the terminal no longer shows, so images scrolling past do not grow memory without bound. | not-submitted | Upstream herdr-app releases kitty image textures from the GPUI atlas when it drops them from its cache. |
 | 10 | `fork-ci` | tooling | Run only the fork's own CI: the upstream test workflow on pushes to downstream and pull requests, on standard GitHub-hosted runners, with no release publishing. | inappropriate: downstream-only CI policy | The fork is retired. |
-| 11 | `fork-tooling` | tooling | Own fork policy, generated evidence, and integration configuration. | inappropriate: downstream-only fork maintenance | The downstream fork is retired. |
+| 11 | `fork-release` | tooling | Publish a signed, notarized macOS build of the fork to GitHub Releases from a fork-v* tag, without upstream updates, telemetry or feedback. | not-submitted | The fork stops shipping its own builds, or the rebranded app takes over releases. |
+| 12 | `fork-tooling` | tooling | Own fork policy, generated evidence, and integration configuration. | inappropriate: downstream-only fork maintenance | The downstream fork is retired. |
 
 ## Disabled
 

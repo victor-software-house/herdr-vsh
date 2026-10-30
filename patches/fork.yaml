@@ -136,6 +136,18 @@ patches:
     drop_when: The fork is retired.
     scope:
       - .github/workflows/**
+  - name: fork-release
+    kind: tooling
+    purpose: >-
+      Publish a signed, notarized macOS build of the fork to GitHub Releases from a
+      fork-v* tag, without upstream updates, telemetry or feedback.
+    upstream_status: not-submitted
+    drop_when: >-
+      The fork stops shipping its own builds, or the rebranded app takes over
+      releases.
+    scope:
+      - .github/workflows/release.yml
+      - scripts/fork-release-macos
   - name: fork-tooling
     kind: tooling
     purpose: Own fork policy, generated evidence, and integration configuration.
