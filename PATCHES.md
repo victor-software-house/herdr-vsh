@@ -14,8 +14,9 @@ Base: `refs/tags/v0.1.9` (`3e32d75e7aa2327d7b1f89caf3d5dafd1f44f1b2`)
 | 6 | `macos-26-titlebar` | source | Fit the macOS 26 titlebar: hide the background macOS 26 and later draw over the transparent titlebar, as Ghostty does, and leave room for the wider-spaced window buttons at any zoom. | not-submitted | GPUI or Herdr hides the macOS 26 titlebar background and sizes the window-button gap for macOS 26 itself. |
 | 7 | `kitty-placeholders` | source | Draw kitty images placed with Unicode placeholders (Claude Code images): bump vendored Ghostty to 9fc5ec6b, which resolves placeholders in the render state, build it with Zig 0.17, and draw every image from the render state list. | not-submitted | Upstream herdr-app draws images from a Ghostty render state that resolves placeholders. |
 | 8 | `kitty-file-media` | source | Accept kitty images sent by file path, temporary file or shared memory, as Ghostty does, so Claude Code image previews draw. | not-submitted | Upstream herdr-app enables the libghostty-vt kitty file, temporary file and shared memory media. |
-| 9 | `fork-ci` | tooling | Run only the fork's own CI: the upstream test workflow on pushes to downstream and pull requests, on standard GitHub-hosted runners, with no release publishing. | inappropriate: downstream-only CI policy | The fork is retired. |
-| 10 | `fork-tooling` | tooling | Own fork policy, generated evidence, and integration configuration. | inappropriate: downstream-only fork maintenance | The downstream fork is retired. |
+| 9 | `kitty-image-release` | source | Free the GPU texture of a kitty image the terminal no longer shows, so images scrolling past do not grow memory without bound. | not-submitted | Upstream herdr-app releases kitty image textures from the GPUI atlas when it drops them from its cache. |
+| 10 | `fork-ci` | tooling | Run only the fork's own CI: the upstream test workflow on pushes to downstream and pull requests, on standard GitHub-hosted runners, with no release publishing. | inappropriate: downstream-only CI policy | The fork is retired. |
+| 11 | `fork-tooling` | tooling | Own fork policy, generated evidence, and integration configuration. | inappropriate: downstream-only fork maintenance | The downstream fork is retired. |
 
 ## Disabled
 

@@ -117,6 +117,18 @@ patches:
       shared memory media.
     scope:
       - src/vt.rs
+  - name: kitty-image-release
+    kind: source
+    purpose: >-
+      Free the GPU texture of a kitty image the terminal no longer shows, so images
+      scrolling past do not grow memory without bound.
+    upstream_status: not-submitted
+    drop_when: >-
+      Upstream herdr-app releases kitty image textures from the GPUI atlas when it
+      drops them from its cache.
+    scope:
+      - src/terminal.rs
+      - src/vt.rs
   - name: fork-ci
     kind: tooling
     purpose: "Run only the fork's own CI: the upstream test workflow on pushes to downstream and pull requests, on standard GitHub-hosted runners, with no release publishing."
