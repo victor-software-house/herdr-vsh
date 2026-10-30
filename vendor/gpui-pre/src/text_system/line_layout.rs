@@ -2,6 +2,7 @@ use crate::{FontId, GlyphId, Pixels, PlatformTextSystem, Point, SharedString, Si
 use collections::FxHashMap;
 use parking_lot::{Mutex, RwLock, RwLockUpgradableReadGuard};
 use smallvec::SmallVec;
+use unicode_segmentation::UnicodeSegmentation;
 use std::{
     borrow::Borrow,
     hash::{Hash, Hasher},
@@ -702,7 +703,7 @@ impl LineLayoutCache {
                 .layout_line(&text, font_size, runs);
 
             if let Some(force_width) = force_width {
-                apply_force_width_to_layout(&mut layout, force_width);
+                apply_force_width_to_layout(&mut layout, &text, force_width);
             }
 
             let key = Arc::new(CacheKey {
@@ -853,7 +854,7 @@ impl LineLayoutCache {
             .layout_line(&text, font_size, runs);
 
         if let Some(force_width) = force_width {
-            apply_force_width_to_layout(&mut layout, force_width);
+            apply_force_width_to_layout(&mut layout, &text, force_width);
         }
 
         let key = Arc::new(HashedCacheKey {
@@ -891,31 +892,34 @@ impl LineLayoutCache {
     }
 }
 
-// Combining marks (e.g. Thai vowel signs, Arabic diacritics) are shaped by
-// HarfBuzz at the same x position as their base character. The force-width
-// loop must not advance the cell counter for these zero-advance glyphs,
-// otherwise they get displaced into the next cell. We detect them by checking
-// whether shaped x has advanced by at least half a cell beyond the last base.
-fn apply_force_width_to_layout(layout: &mut LineLayout, force_width: Pixels) {
-    let mut glyph_pos: usize = 0;
-    // NEG_INFINITY ensures the first glyph is always classified as a base.
-    let mut last_base_shaped_x = px(f32::NEG_INFINITY);
-    let mut last_base_actual_x = px(0.);
+// HERDR: each grapheme is one cell, and a glyph goes to the cell its cluster
+// starts in, as Ghostty places them (src/font/shaper/coretext.zig: "Our
+// cluster is also our cell X position"). Glyphs after the first of a cluster
+// keep their offset from it, so combining marks stay on their base, and a
+// ligature that replaces several graphemes starts at the first one's cell and
+// covers the rest. Counting glyphs instead drifted one cell per ligature.
+fn apply_force_width_to_layout(layout: &mut LineLayout, text: &str, force_width: Pixels) {
+    let starts: Vec<usize> = text.grapheme_indices(true).map(|(i, _)| i).collect();
+    let cell_of = |index: usize| starts.partition_point(|&s| s <= index).saturating_sub(1);
+    // The current cluster's cell, its first glyph's shaped x and where that glyph went.
+    let mut cluster: Option<(usize, Pixels, Pixels)> = None;
 
     for run in layout.runs.iter_mut() {
         for glyph in run.glyphs.iter_mut() {
             let shaped_x = glyph.position.x;
-
-            if shaped_x > last_base_shaped_x + force_width * 0.5 {
-                let forced_x = glyph_pos * force_width;
-                if (shaped_x - forced_x).abs() > px(1.) {
-                    glyph.position.x = forced_x;
+            let cell = cell_of(glyph.index);
+            match cluster {
+                Some((c, first_shaped, first_actual)) if c == cell => {
+                    glyph.position.x = first_actual + (shaped_x - first_shaped);
                 }
-                last_base_shaped_x = shaped_x;
-                last_base_actual_x = glyph.position.x;
-                glyph_pos += 1;
-            } else {
-                glyph.position.x = last_base_actual_x + (shaped_x - last_base_shaped_x);
+                _ => {
+                    let forced_x = cell * force_width;
+                    // Within a pixel the shaped spot stays, so text doesn't wobble.
+                    if (shaped_x - forced_x).abs() > px(1.) {
+                        glyph.position.x = forced_x;
+                    }
+                    cluster = Some((cell, shaped_x, glyph.position.x));
+                }
             }
         }
     }
@@ -1110,7 +1114,7 @@ mod tests {
         let cell_width = px(8.);
         let mut layout = make_layout(vec![glyph_at(0., 0), glyph_at(8., 1), glyph_at(16., 2)]);
 
-        apply_force_width_to_layout(&mut layout, cell_width);
+        apply_force_width_to_layout(&mut layout, "abc", cell_width);
 
         let positions = glyph_x_positions(&layout);
         assert_eq!(positions, vec![0., 8., 16.]);
@@ -1125,7 +1129,7 @@ mod tests {
             glyph_at(0., 3), // ี (combining mark, same x)
         ]);
 
-        apply_force_width_to_layout(&mut layout, cell_width);
+        apply_force_width_to_layout(&mut layout, "\u{e01}\u{e35}", cell_width);
 
         let positions = glyph_x_positions(&layout);
         assert_eq!(positions, vec![0., 0.]);
@@ -1136,7 +1140,7 @@ mod tests {
         let cell_width = px(8.);
         let mut layout = make_layout(vec![glyph_at(0., 0), glyph_at(0., 3), glyph_at(8., 6)]);
 
-        apply_force_width_to_layout(&mut layout, cell_width);
+        apply_force_width_to_layout(&mut layout, "\u{e01}\u{e35}x", cell_width);
 
         let positions = glyph_x_positions(&layout);
         assert_eq!(positions, vec![0., 0., 8.]);
@@ -1153,7 +1157,7 @@ mod tests {
             glyph_at(8., 9), // next base
         ]);
 
-        apply_force_width_to_layout(&mut layout, cell_width);
+        apply_force_width_to_layout(&mut layout, "\u{e01}\u{e34}\u{e49}x", cell_width);
 
         let positions = glyph_x_positions(&layout);
         assert_eq!(positions, vec![0., 0., 0., 8.]);
@@ -1169,7 +1173,7 @@ mod tests {
             glyph_at(19.8, 2), // >1px off from 16.0, corrected
         ]);
 
-        apply_force_width_to_layout(&mut layout, cell_width);
+        apply_force_width_to_layout(&mut layout, "abc", cell_width);
 
         let positions = glyph_x_positions(&layout);
         assert_eq!(positions, vec![0.5, 8., 16.]);
@@ -1182,9 +1186,34 @@ mod tests {
         // The combining mark must align to the base's actual position, not the grid slot.
         let mut layout = make_layout(vec![glyph_at(0.5, 0), glyph_at(0.5, 3)]);
 
-        apply_force_width_to_layout(&mut layout, cell_width);
+        apply_force_width_to_layout(&mut layout, "\u{e01}\u{e35}", cell_width);
 
         let positions = glyph_x_positions(&layout);
         assert_eq!(positions, vec![0.5, 0.5]);
+    }
+
+    #[test]
+    fn test_force_width_ligature_spans_its_cells() {
+        let cell_width = px(8.);
+        // "===a" shaped as one three-cell ligature glyph, then "a" (the
+        // fallback font drew it 2px late): "a" belongs in cell 3, not cell 1.
+        let mut layout = make_layout(vec![glyph_at(0., 0), glyph_at(26., 3)]);
+
+        apply_force_width_to_layout(&mut layout, "===a", cell_width);
+
+        let positions = glyph_x_positions(&layout);
+        assert_eq!(positions, vec![0., 24.]);
+    }
+
+    #[test]
+    fn test_force_width_ligature_parts_keep_their_offsets() {
+        let cell_width = px(8.);
+        // A ligature drawn as two glyphs of one cluster at "=>" in cell 2.
+        let mut layout = make_layout(vec![glyph_at(0., 0), glyph_at(9.5, 2), glyph_at(13.5, 2)]);
+
+        apply_force_width_to_layout(&mut layout, "a =>", cell_width);
+
+        let positions = glyph_x_positions(&layout);
+        assert_eq!(positions, vec![0., 16., 20.]);
     }
 }
