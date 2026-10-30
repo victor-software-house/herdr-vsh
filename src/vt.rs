@@ -237,6 +237,9 @@ pub struct Vt {
     key_event: GhosttyKeyEvent,
     mouse: GhosttyMouseEncoder,
     mouse_event: GhosttyMouseEvent,
+    /// The cell of the last motion reported: motion within it says nothing new.
+    /// (The encoder's own tracking resets on every setopt, so it's kept here.)
+    last_motion: Option<(u32, u32)>,
     pub cols: u16,
     pub rows: u16,
     theme: Theme,
@@ -312,6 +315,7 @@ unsafe extern "C" fn on_title(_t: GhosttyTerminal, userdata: *mut c_void) {
 
 const SYNC_OUTPUT: GhosttyMode = 2026;
 const BRACKETED_PASTE: GhosttyMode = 2004;
+const SGR_PIXELS: GhosttyMode = 1016;
 const MAX_HOLD: Duration = Duration::from_millis(1000);
 const SCROLLBACK_MAX_LINES: usize = 10_000;
 // Bound memory per terminal; wide or heavily styled rows may hit this first.
@@ -385,6 +389,7 @@ impl Vt {
                 key_event,
                 mouse,
                 mouse_event,
+                last_motion: None,
                 cols,
                 rows,
                 theme: theme(),
@@ -1043,6 +1048,13 @@ impl Vt {
         let (cols, rows, cw, ch) = size;
         let (cwi, chi) = (cw.round().max(1.0), ch.round().max(1.0));
         let (x, y) = (x / cw.max(1.0) * cwi, y / ch.max(1.0) * chi);
+        // As Ghostty: motion is reported once per cell, except in SGR-pixels mode.
+        let cell = ((x / cwi).max(0.0) as u32, (y / chi).max(0.0) as u32);
+        if action != GHOSTTY_MOUSE_ACTION_MOTION {
+            self.last_motion = None;
+        } else if !self.mode(SGR_PIXELS) && self.last_motion.replace(cell) == Some(cell) {
+            return Vec::new();
+        }
         unsafe {
             ghostty_mouse_encoder_setopt_from_terminal(self.mouse, self.term);
             let s = GhosttyMouseEncoderSize {
@@ -1299,6 +1311,21 @@ mod tests {
         let x = 39.0 * cw + 5.0; // inside column 39 (1-based 40)
         let bytes = vt.encode_mouse(GHOSTTY_MOUSE_ACTION_PRESS, Some(GHOSTTY_MOUSE_BUTTON_LEFT), 0, x, 10.0, (80, 2, cw, ch), false);
         assert_eq!(String::from_utf8_lossy(&bytes), "\x1b[<0;40;1M");
+    }
+
+    #[test]
+    fn hover_reaches_programs_that_ask_for_any_motion() {
+        // Mode 1003 programs (Claude Code, TUIs with hover) get motion with no
+        // button down, once per cell; mode 1000 programs get none.
+        let mut vt = Vt::new(80, 2);
+        let size = (80, 2, 10.0, 20.0);
+        let hover = |vt: &mut Vt, x: f32| String::from_utf8_lossy(&vt.encode_mouse(GHOSTTY_MOUSE_ACTION_MOTION, None, 0, x, 5.0, size, false)).into_owned();
+        vt.write(b"\x1b[?1000h\x1b[?1006h");
+        assert_eq!(hover(&mut vt, 15.0), "");
+        vt.write(b"\x1b[?1003h");
+        assert_eq!(hover(&mut vt, 25.0), "\x1b[<35;3;1M");
+        assert_eq!(hover(&mut vt, 27.0), "", "same cell");
+        assert_eq!(hover(&mut vt, 35.0), "\x1b[<35;4;1M");
     }
 
     #[test]

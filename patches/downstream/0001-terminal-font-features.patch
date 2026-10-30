@@ -1,0 +1,174 @@
+terminal-font-features
+
+From: Victor Araújo <victor@victor-software-house.com>
+
+Downstream-Reason: Draw terminal text with the font's ligatures and the person's OpenType features and weights, as Ghostty does, instead of forcing calt, liga and dlig off and requesting Medium and Bold.
+Upstream-Status: not-submitted
+Drop-When: Upstream herdr-app reads terminal font features and weights from settings and keeps ligatures on by default.
+---
+ defaults/AGENTS.md |    4 +++
+ src/settings.rs    |   62 +++++++++++++++++++++++++++++++++++++++++++++++++++-
+ src/terminal.rs    |    8 ++++---
+ 3 files changed, 70 insertions(+), 4 deletions(-)
+
+diff --git a/defaults/AGENTS.md b/defaults/AGENTS.md
+index 38156c2fdf2e6a2e38da847d992935cebe878b22..86299f56d9a65a758911913cce939f37f5cdc5f3 100644
+--- a/defaults/AGENTS.md
++++ b/defaults/AGENTS.md
+@@ -585,6 +585,10 @@ What's about the user, never a look:
+   cargo). Read at start.
+ - `font`, `font_size`, `ui_font`: used where the layout doesn't set its
+   own. Herdr (main) leaves these unset. Bigger panels: `zoom`.
++- `font_features`: the terminals' OpenType features, as Ghostty writes
++  them (`["ss01", "-calt", "cv01=2"]`). Ligatures are on unless turned off.
++- `font_weight`, `font_weight_bold`: the terminals' weights for plain and
++  bold text, 100 to 900 (default 400 and 700, the Regular and Bold faces).
+ - `theme`: a theme name or `{light, dark}`; used where the layout sets none.
+   The theme picker overrides any layout and stays on that layout.
+ - `colors`: theme color overrides (`{"accent":"#ff8800"}`), with the same
+diff --git a/src/settings.rs b/src/settings.rs
+index 5145c4aec6386ab6f1e05e3643642c4b85a386a1..8166089faa19103efbca98fc0b72ad27573db18e 100644
+--- a/src/settings.rs
++++ b/src/settings.rs
+@@ -378,6 +378,15 @@ pub struct Person {
+     pub font: Option<String>,
+     #[serde(skip_serializing_if = "Option::is_none")]
+     pub font_size: Option<f32>,
++    /// The terminals' OpenType features, as Ghostty writes them: `ss01`,
++    /// `-calt`, `liga=0`. The font's defaults (ligatures on) apply otherwise.
++    #[serde(skip_serializing_if = "Vec::is_empty")]
++    pub font_features: Vec<String>,
++    /// The terminals' weights for plain and bold text (CSS 100..900).
++    #[serde(skip_serializing_if = "Option::is_none")]
++    pub font_weight: Option<f32>,
++    #[serde(skip_serializing_if = "Option::is_none")]
++    pub font_weight_bold: Option<f32>,
+     /// The panels' font (their sizes follow zoom).
+     #[serde(skip_serializing_if = "Option::is_none")]
+     pub ui_font: Option<String>,
+@@ -443,6 +452,9 @@ impl Default for Person {
+             core: None,
+             font: None,
+             font_size: None,
++            font_features: Vec::new(),
++            font_weight: None,
++            font_weight_bold: None,
+             ui_font: None,
+             telemetry: true,
+             clipboard_write: true,
+@@ -462,6 +474,10 @@ impl Default for Person {
+ pub struct Settings {
+     pub font_family: String,
+     pub font_size: f32,
++    /// The terminals' OpenType features, as written in settings.json.
++    pub font_features: Vec<String>,
++    pub font_weight: f32,
++    pub font_weight_bold: f32,
+     pub ui_font_family: String,
+     pub ui_font_size: f32,
+     /// How big the whole app is drawn (1 = as designed). The zoom keys change it.
+@@ -509,6 +525,10 @@ impl Default for Settings {
+         Settings {
+             font_family: DEFAULT_FONT.into(),
+             font_size: 14.0,
++            font_features: Vec::new(),
++            // Ghostty's: the family's Regular and Bold faces.
++            font_weight: 400.0,
++            font_weight_bold: 700.0,
+             ui_font_family: "Geist".into(),
+             ui_font_size: 13.0,
+             zoom: 1.0,
+@@ -545,6 +565,9 @@ impl Settings {
+             // The layout's own, else the person's, else Herdr's.
+             font_family: look.font.clone().or(person.font.clone()).unwrap_or(d.font_family),
+             font_size: look.font_size.or(person.font_size).unwrap_or(d.font_size),
++            font_features: person.font_features.clone(),
++            font_weight: person.font_weight.unwrap_or(d.font_weight),
++            font_weight_bold: person.font_weight_bold.unwrap_or(d.font_weight_bold),
+             ui_font_family: look.ui_font.clone().or(person.ui_font.clone()).unwrap_or(d.ui_font_family),
+             ui_font_size: d.ui_font_size,
+             zoom: person.zoom,
+@@ -609,6 +632,16 @@ impl Settings {
+         if !(6.0..=72.0).contains(&self.font_size) {
+             out.push(format!("font_size {} is outside 6..72", self.font_size));
+         }
++        for f in &self.font_features {
++            if font_feature(f).is_none() {
++                out.push(format!("font_features: {f:?} is not a feature like ss01, -calt or liga=0"));
++            }
++        }
++        for (k, w) in [("font_weight", self.font_weight), ("font_weight_bold", self.font_weight_bold)] {
++            if !(100.0..=900.0).contains(&w) {
++                out.push(format!("{k} {w} is outside 100..900"));
++            }
++        }
+         out
+     }
+ }
+@@ -801,6 +834,20 @@ pub fn terminal_font() -> String {
+     }
+ }
+ 
++/// One `font_features` entry in Ghostty's syntax: `tag` or `+tag` turns it
++/// on, `-tag` off, `tag=n` sets a value (stylistic alternates take 1..).
++pub fn font_feature(s: &str) -> Option<(String, u32)> {
++    let s = s.trim();
++    let (tag, value) = if let Some(t) = s.strip_prefix('-') {
++        (t, 0)
++    } else if let Some((t, v)) = s.split_once('=') {
++        (t.trim(), v.trim().parse().ok()?)
++    } else {
++        (s.strip_prefix('+').unwrap_or(s), 1)
++    };
++    (tag.len() == 4 && tag.bytes().all(|b| b.is_ascii_graphic())).then(|| (tag.to_owned(), value))
++}
++
+ /// Fonts Herdr ships, so the defaults look the same everywhere.
+ pub const BUNDLED_FONTS: &[&[u8]] = &[
+     include_bytes!("../assets/fonts/GeistMono-Variable.ttf"),
+@@ -904,11 +951,24 @@ mod tests {
+         assert_eq!(Settings::compose(&person, &win98.look, true).theme, "ink");
+     }
+ 
++    #[test]
++    fn font_features_read_ghostty_syntax() {
++        assert_eq!(font_feature("ss01"), Some(("ss01".into(), 1)));
++        assert_eq!(font_feature("+liga"), Some(("liga".into(), 1)));
++        assert_eq!(font_feature("-calt"), Some(("calt".into(), 0)));
++        assert_eq!(font_feature("cv01 = 2"), Some(("cv01".into(), 2)));
++        assert_eq!(font_feature("ligatures"), None);
++        assert_eq!(font_feature("liga=on"), None);
++        let person: Person = serde_json::from_value(serde_json::json!({"font_features": ["ss01", "nopes"], "font_weight": 50})).unwrap();
++        let problems = Settings::compose(&person, &crate::layout::Look::default(), true).problems();
++        assert_eq!(problems.len(), 2, "{problems:?}");
++    }
++
+     /// The guide agents read (written to the home folder) explains every
+     /// settings.json key.
+     #[test]
+     fn the_guide_explains_every_setting() {
+-        let all = Person { core: Some(String::new()), font: Some(String::new()), font_size: Some(1.0), ui_font: Some(String::new()), telemetry: false, clipboard_write: false, appearance: Appearance::Light, theme: Some(crate::layout::ThemeChoice::One(String::new())), colors: [("text".into(), String::new())].into(), ..Person::default() };
++        let all = Person { core: Some(String::new()), font: Some(String::new()), font_size: Some(1.0), font_features: vec!["ss01".into()], font_weight: Some(400.0), font_weight_bold: Some(700.0), ui_font: Some(String::new()), telemetry: false, clipboard_write: false, appearance: Appearance::Light, theme: Some(crate::layout::ThemeChoice::One(String::new())), colors: [("text".into(), String::new())].into(), ..Person::default() };
+         let keys: Vec<String> = serde_json::to_value(&all).unwrap().as_object().unwrap().keys().cloned().collect();
+         let guide = include_str!("../defaults/AGENTS.md");
+         let section = guide.split("## The person").nth(1).and_then(|s| s.split("\n## ").next()).unwrap_or_default();
+diff --git a/src/terminal.rs b/src/terminal.rs
+index e02d91d9e962b15cf789b2e458eba37686d12e60..ec5a6c5c188c493f34ee650763f218f6ce6cbfca 100644
+--- a/src/terminal.rs
++++ b/src/terminal.rs
+@@ -831,10 +831,12 @@ fn map_key(key: &str) -> Option<(GhosttyKey, bool, Option<char>)> {
+ }
+ 
+ fn cell_font(bold: bool, italic: bool) -> Font {
++    let s = crate::settings::get();
+     let mut f = font(crate::settings::terminal_font());
+-    // Ligatures merge several cells into one glyph, which breaks the grid.
+-    f.features = FontFeatures(std::sync::Arc::new(vec![("calt".into(), 0), ("liga".into(), 0), ("dlig".into(), 0)]));
+-    f.weight = if bold { FontWeight::BOLD } else { FontWeight::MEDIUM };
++    // Ligatures stay on, as in Ghostty: glyphs are placed by the cell they
++    // start at, so one that covers several cells keeps the grid.
++    f.features = FontFeatures(std::sync::Arc::new(s.font_features.iter().filter_map(|f| crate::settings::font_feature(f)).collect()));
++    f.weight = FontWeight(if bold { s.font_weight_bold } else { s.font_weight });
+     f.style = if italic { FontStyle::Italic } else { FontStyle::Normal };
+     f
+ }
