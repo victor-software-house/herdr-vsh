@@ -16,7 +16,7 @@ Drop-When: GPUI or Herdr hides the macOS 26 titlebar background and sizes the wi
  7 files changed, 45 insertions(+), 14 deletions(-)
 
 diff --git a/defaults/mods/agents/main.js b/defaults/mods/agents/main.js
-index 1e06d1a184d70fa060d626f6b2fe22b4181768e8..5aaa2cb89b63ed2477562f90469c0e6f087bcb43 100644
+index 4ec2d54cdc9a7b4013cc4308745c3d813adedac9..8485a15d11c2ed94195e053fe88e2cc35ea0d53d 100644
 --- a/defaults/mods/agents/main.js
 +++ b/defaults/mods/agents/main.js
 @@ -3,7 +3,7 @@
@@ -38,7 +38,7 @@ index 1e06d1a184d70fa060d626f6b2fe22b4181768e8..5aaa2cb89b63ed2477562f90469c0e6f
  
  const clean = (s) => (s ?? "").replace(/^[^\p{L}\p{N}]+/u, "").trim();
 diff --git a/defaults/mods/tabs/main.js b/defaults/mods/tabs/main.js
-index a0fa77b242dd35634bb1380dd62d358e48120853..cb2ae067557f3ae3ca1a10b3b9d51e3551bf86ce 100644
+index aed2f8ba3a0cbc3f2d50a407516ca9f90ec7c011..76369a523ba48005783ac76be5d30742adbf458f 100644
 --- a/defaults/mods/tabs/main.js
 +++ b/defaults/mods/tabs/main.js
 @@ -74,7 +74,7 @@ export default class Tabs extends View {
@@ -107,10 +107,10 @@ index 511e122ced643ca20de81569471c48b42b36166c..519d9c741271aeacdb9f9c2db69c17b8
        .when(!collapsed, el => el.child(this.button("search", svg("mods/workspace-chrome/search.svg").size(15), () => run("mod.open", { name: "picker" }))))
        // On the macOS rail the traffic lights fill the row; the agents list's » unfolds it.
 diff --git a/src/mods/render_tests.rs b/src/mods/render_tests.rs
-index fa19c9506866b752debaa9e3610b73f28bbb8dd0..2bf90bdc27f1c7fcc229a40d26f1f18232329fac 100644
+index e35815a63ddcccf09a790324ee95ba4f2f88329e..57549f91f5bd90d2ad54a6e6a4d85d064ca1464c 100644
 --- a/src/mods/render_tests.rs
 +++ b/src/mods/render_tests.rs
-@@ -279,10 +279,10 @@ fn tabs_leave_room_for_macos_traffic_lights(cx: &mut TestAppContext) {
+@@ -282,10 +282,10 @@ fn tabs_leave_room_for_macos_traffic_lights(cx: &mut TestAppContext) {
      cx.update(gpui_shell::init);
      let staged = Staged::new();
      for (platform, titlebar, fullscreen, width, lights, zoom, expected) in [
@@ -125,7 +125,7 @@ index fa19c9506866b752debaa9e3610b73f28bbb8dd0..2bf90bdc27f1c7fcc229a40d26f1f182
          ("macos", "none", false, 268, true, 1.0, 10),
          ("macos", "none", true, 44, true, 1.0, 10),
 diff --git a/src/window.rs b/src/window.rs
-index f4fa8f0855386547ca5aa88fbe8cb462e8bbe22b..3dbe2d2a8f7c6785c694064cc2647ca905ae3028 100644
+index dcd4d8976a2a6ba25617ecc309bdf7d254519e07..c5d8569f2ac98e68582fb5f5d122f311bfdc1c73 100644
 --- a/src/window.rs
 +++ b/src/window.rs
 @@ -31,8 +31,9 @@ use std::time::{Duration, Instant, SystemTime};
@@ -141,7 +141,7 @@ index f4fa8f0855386547ca5aa88fbe8cb462e8bbe22b..3dbe2d2a8f7c6785c694064cc2647ca9
  fn traffic_light_divider_inset(n: &Node, axis: Axis, index: usize, macos: bool, zoom: f32) -> f32 {
      if !macos || axis != Axis::Row || n.titlebar != Some(crate::layout::Titlebar::Layout) {
 diff --git a/vendor/gpui-pre-macos/src/window.rs b/vendor/gpui-pre-macos/src/window.rs
-index abe97c7ceb5dfa921ae46be2580c32769a282244..070421382ea4773b533b9763427fb9c3bfafb24c 100644
+index 1ba661cf773822aca98bb5a591b11be7e7dc4993..bdc5216099af2aa6cece6a94244722940edb5135 100644
 --- a/vendor/gpui-pre-macos/src/window.rs
 +++ b/vendor/gpui-pre-macos/src/window.rs
 @@ -719,7 +719,35 @@ struct MacWindowState {

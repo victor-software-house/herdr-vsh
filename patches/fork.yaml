@@ -13,10 +13,10 @@ upstream:
 base:
   target:
     kind: tag
-    selector: refs/tags/v0.1.9
-    commit: 3e32d75e7aa2327d7b1f89caf3d5dafd1f44f1b2
-  canonical: 3e32d75e7aa2327d7b1f89caf3d5dafd1f44f1b2
-  stack: 3e32d75e7aa2327d7b1f89caf3d5dafd1f44f1b2
+    selector: refs/tags/v0.1.11
+    commit: e12fd31866f33cb613922d0b33ea506e6f23ce3c
+  canonical: e12fd31866f33cb613922d0b33ea506e6f23ce3c
+  stack: e12fd31866f33cb613922d0b33ea506e6f23ce3c
 documents:
   ledger: PATCHES.md
   exports: patches/downstream
@@ -49,17 +49,6 @@ patches:
       - vendor/gpui-pre/**
       - Cargo.lock
       - THIRD-PARTY-NOTICES
-  - name: mouse-hover
-    kind: source
-    purpose: >-
-      Report pointer motion without a pressed button to programs that enable
-      any-event mouse tracking (mode 1003), as Ghostty does, so hover reaches TUIs; the encoder
-      filters by mode, and motion within one cell is dropped except in SGR-pixels mode.
-    upstream_status: not-submitted
-    drop_when: Upstream herdr-app forwards buttonless motion to the mouse encoder.
-    scope:
-      - src/terminal.rs
-      - src/vt.rs
   - name: legacy-computing-sprites
     kind: source
     purpose: "Draw block mosaics that block-character images and TUIs use as shapes that fill their cell, as Ghostty does: sextants, octants, smooth mosaics, eighth blocks, braille, box diagonals and corner triangles. Font glyphs for these leave seams or are missing."
@@ -200,7 +189,31 @@ patches:
       - mise.toml
       - mise.lock
 disabled_patches: []
-history: []
+history:
+  - kind: rebase
+    target:
+      kind: tag
+      selector: refs/tags/v0.1.11
+      commit: e12fd31866f33cb613922d0b33ea506e6f23ce3c
+    recovery:
+      tag: forkctl/recovery/1793489369880849000-d573c3fdb410
+      tag_object: e53183886cc93ffd0638f4831f6db997f69609b1
+      old_base: 3e32d75e7aa2327d7b1f89caf3d5dafd1f44f1b2
+      old_tip: d573c3fdb41057a23db472992aa86eba8c1b209a
+    dropped:
+      - patch:
+          name: mouse-hover
+          kind: source
+          purpose: >-
+            Report pointer motion without a pressed button to programs that enable
+            any-event mouse tracking (mode 1003), as Ghostty does, so hover reaches TUIs; the encoder
+            filters by mode, and motion within one cell is dropped except in SGR-pixels mode.
+          upstream_status: not-submitted
+          drop_when: Upstream herdr-app forwards buttonless motion to the mouse encoder.
+          scope:
+            - src/terminal.rs
+            - src/vt.rs
+        commit: fad2440d2db357dc2d500616accf892aab355d63
 contracts:
   allow_base: []
   required_text: []

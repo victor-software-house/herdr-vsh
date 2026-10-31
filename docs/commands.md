@@ -279,13 +279,13 @@ No arguments.
 
 ## `terminal.paste`
 
-Paste into the focused terminal (an image alone, into one on another machine, as a file there).
+Paste into the focused terminal (copied files as if dropped; an image alone as terminal.paste_image pastes it).
 
 No arguments.
 
 ## `terminal.paste_image`
 
-Ctrl+V: the clipboard's image as a file on the focused terminal's machine, when that's another one; otherwise Ctrl+V goes to the terminal.
+Ctrl+V: the clipboard's image as a file on the focused terminal's machine, when that's another one; on Windows, paste clipboard text; otherwise Ctrl+V goes to the terminal.
 
 No arguments.
 
@@ -396,7 +396,7 @@ Reset a shipped layout and its clicks (the old file is kept aside).
 
 ## `mod.open`
 
-Open a mod as the overlay its mod.json describes.
+Toggle a mod as the overlay its mod.json describes; calling again closes it.
 
 | Argument | Required |
 |---|---|
@@ -439,7 +439,7 @@ Draft feedback for the person to review and send (from: person or agent).
 
 ## `app.palette`
 
-Open the command palette: every command by name, with its key.
+Toggle the command palette: every command by name, with its key; calling again closes it.
 
 No arguments.
 

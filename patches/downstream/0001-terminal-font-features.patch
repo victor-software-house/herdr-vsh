@@ -12,10 +12,10 @@ Drop-When: Upstream herdr-app reads terminal font features and weights from sett
  3 files changed, 70 insertions(+), 4 deletions(-)
 
 diff --git a/defaults/AGENTS.md b/defaults/AGENTS.md
-index 38156c2fdf2e6a2e38da847d992935cebe878b22..86299f56d9a65a758911913cce939f37f5cdc5f3 100644
+index 00de6b6f50ce002057f95e74ffb6f0b91bd3701c..e54dad71f2334bf33fb4f252d32c80a633ba79a6 100644
 --- a/defaults/AGENTS.md
 +++ b/defaults/AGENTS.md
-@@ -585,6 +585,10 @@ What's about the user, never a look:
+@@ -609,6 +609,10 @@ What's about the user, never a look:
    cargo). Read at start.
  - `font`, `font_size`, `ui_font`: used where the layout doesn't set its
    own. Herdr (main) leaves these unset. Bigger panels: `zoom`.
@@ -27,7 +27,7 @@ index 38156c2fdf2e6a2e38da847d992935cebe878b22..86299f56d9a65a758911913cce939f37
    The theme picker overrides any layout and stays on that layout.
  - `colors`: theme color overrides (`{"accent":"#ff8800"}`), with the same
 diff --git a/src/settings.rs b/src/settings.rs
-index 5145c4aec6386ab6f1e05e3643642c4b85a386a1..8166089faa19103efbca98fc0b72ad27573db18e 100644
+index 10e7b333e9e6df306cda10d34345821e258c3942..f7eef721080fb50b05cbb46c0059f638ea44b31d 100644
 --- a/src/settings.rs
 +++ b/src/settings.rs
 @@ -378,6 +378,15 @@ pub struct Person {
@@ -105,7 +105,7 @@ index 5145c4aec6386ab6f1e05e3643642c4b85a386a1..8166089faa19103efbca98fc0b72ad27
          out
      }
  }
-@@ -801,6 +834,20 @@ pub fn terminal_font() -> String {
+@@ -803,6 +836,20 @@ pub fn terminal_font() -> String {
      }
  }
  
@@ -126,7 +126,7 @@ index 5145c4aec6386ab6f1e05e3643642c4b85a386a1..8166089faa19103efbca98fc0b72ad27
  /// Fonts Herdr ships, so the defaults look the same everywhere.
  pub const BUNDLED_FONTS: &[&[u8]] = &[
      include_bytes!("../assets/fonts/GeistMono-Variable.ttf"),
-@@ -904,11 +951,24 @@ mod tests {
+@@ -906,11 +953,24 @@ mod tests {
          assert_eq!(Settings::compose(&person, &win98.look, true).theme, "ink");
      }
  
@@ -153,10 +153,10 @@ index 5145c4aec6386ab6f1e05e3643642c4b85a386a1..8166089faa19103efbca98fc0b72ad27
          let guide = include_str!("../defaults/AGENTS.md");
          let section = guide.split("## The person").nth(1).and_then(|s| s.split("\n## ").next()).unwrap_or_default();
 diff --git a/src/terminal.rs b/src/terminal.rs
-index e02d91d9e962b15cf789b2e458eba37686d12e60..ec5a6c5c188c493f34ee650763f218f6ce6cbfca 100644
+index e6cfb5abe8feaf2d215417e0e444ee03dd65d7aa..e075e39f36cd8a9ddcbb9d0c28bedd9aa8e9fdd2 100644
 --- a/src/terminal.rs
 +++ b/src/terminal.rs
-@@ -831,10 +831,12 @@ fn map_key(key: &str) -> Option<(GhosttyKey, bool, Option<char>)> {
+@@ -982,10 +982,12 @@ fn map_key(key: &str) -> Option<(GhosttyKey, bool, Option<char>)> {
  }
  
  fn cell_font(bold: bool, italic: bool) -> Font {

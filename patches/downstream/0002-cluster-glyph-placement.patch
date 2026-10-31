@@ -13,7 +13,7 @@ Drop-When: Upstream GPUI or herdr-app places forced-width glyphs by cluster rath
  4 files changed, 73 insertions(+), 39 deletions(-)
 
 diff --git a/Cargo.lock b/Cargo.lock
-index 271ac1a3550e16376637c0260f7d59658870b937..b7532282ea4c8ba713b60ed5084f1941add31548 100644
+index cbc5feac574e8ea92266679ddc2122dde700955d..ddf0ebfda9963715d5cd0b90db8c11138280eb6f 100644
 --- a/Cargo.lock
 +++ b/Cargo.lock
 @@ -3069,6 +3069,7 @@ dependencies = [

@@ -2,9 +2,11 @@
 //! read back as frames to draw, and asked to encode keys and mouse input.
 
 use ghostty_sys::*;
+use std::cell::RefCell;
 use std::collections::HashMap;
 use std::ffi::c_void;
 use std::rc::Rc;
+use std::sync::OnceLock;
 use std::time::{Duration, Instant};
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
@@ -139,6 +141,8 @@ pub struct Placement {
     pub z: i32,
     /// Drawn under the text, not over it.
     pub below_text: bool,
+    /// Placed by Unicode placeholder cells, so sized in whole cells.
+    pub virtual_cells: bool,
 }
 
 unsafe extern "C" fn on_write_pty(_t: GhosttyTerminal, userdata: *mut c_void, data: *const u8, len: usize) {
@@ -241,9 +245,7 @@ pub struct Vt {
     key_event: GhosttyKeyEvent,
     mouse: GhosttyMouseEncoder,
     mouse_event: GhosttyMouseEvent,
-    /// The cell of the last motion reported: motion within it says nothing new.
-    /// (The encoder's own tracking resets on every setopt, so it's kept here.)
-    last_motion: Option<(u32, u32)>,
+    last_mouse_report: Vec<u8>,
     pub cols: u16,
     pub rows: u16,
     /// Cell height in pixels, as last given to `resize`.
@@ -264,6 +266,7 @@ pub struct Vt {
     seen: HashMap<[u64; 2], (Rc<Vec<Cell>>, Option<(u16, u16)>)>,
     /// The width and colors they were read with: a change reads every row.
     seen_with: (u16, u64),
+    placements_cache: RefCell<Option<Vec<Placement>>>,
     /// Whether the program wants win32 key events (Ghostty doesn't track it).
     pub win32: crate::win32_keys::Win32Input,
 }
@@ -273,6 +276,66 @@ type CursorKey = (bool, u16, u16, bool, i32);
 
 /// Where a link shows: (viewport row, first column, last column) per row.
 pub type Spans = Vec<(u16, u16, u16)>;
+
+/// A character of link text and the cell it shows in.
+#[derive(Clone)]
+struct Spot {
+    y: u32,
+    x: u16,
+    width: u16,
+    byte: usize,
+    uri: Option<String>,
+}
+
+/// A screen row's text, where each character shows, and whether the
+/// terminal wrapped it onto the next.
+struct Row {
+    text: String,
+    spots: Vec<Spot>,
+    wraps: bool,
+}
+
+/// The text of `rows` and where each character shows. Where a row doesn't
+/// wrap, it loses its trailing blanks and the next row its leading ones, so
+/// a path a program broke across them reads whole.
+fn link_text(rows: &[Row]) -> (String, Vec<Spot>) {
+    let mut text = String::new();
+    let mut spots = Vec::new();
+    for (i, row) in rows.iter().enumerate() {
+        let blank = |s: &Spot| row.text[s.byte..].starts_with(' ');
+        let start = if i > 0 && !rows[i - 1].wraps { row.spots.iter().position(|s| !blank(s)).unwrap_or(row.spots.len()) } else { 0 };
+        let end = if i + 1 < rows.len() && !row.wraps { row.spots.iter().rposition(|s| !blank(s)).map_or(0, |e| e + 1) } else { row.spots.len() };
+        if start >= end {
+            continue;
+        }
+        let from = row.spots[start].byte;
+        let to = row.spots.get(end).map_or(row.text.len(), |s| s.byte);
+        let base = text.len();
+        text.push_str(&row.text[from..to]);
+        spots.extend(row.spots[start..end].iter().map(|s| Spot { byte: base + s.byte - from, ..s.clone() }));
+    }
+    (text, spots)
+}
+
+impl Row {
+    /// Whether the row runs on into the next: the terminal wrapped it, or it
+    /// reaches the right edge, where a program breaks a line too long to fit.
+    fn full(&self, cols: u16) -> bool {
+        // Cells a program may leave blank at the edge of its own width.
+        const EDGE: u16 = 4;
+        self.wraps || self.spots.iter().rev().find(|s| !self.text[s.byte..].starts_with(' ')).is_some_and(|s| s.x + s.width + EDGE >= cols)
+    }
+}
+
+/// The run of text without whitespace at byte `at`; empty on whitespace.
+fn word_range(text: &str, at: usize) -> std::ops::Range<usize> {
+    if text[at..].starts_with(char::is_whitespace) {
+        return at..at;
+    }
+    let start = text[..at].rfind(char::is_whitespace).map_or(0, |i| i + text[i..].chars().next().map_or(1, char::len_utf8));
+    let end = text[at..].find(char::is_whitespace).map_or(text.len(), |i| at + i);
+    start..end
+}
 
 /// A link found in the terminal: what it says, and where it shows.
 #[derive(Clone, Debug, PartialEq)]
@@ -321,7 +384,6 @@ unsafe extern "C" fn on_title(_t: GhosttyTerminal, userdata: *mut c_void) {
 
 const SYNC_OUTPUT: GhosttyMode = 2026;
 const BRACKETED_PASTE: GhosttyMode = 2004;
-const SGR_PIXELS: GhosttyMode = 1016;
 const MAX_HOLD: Duration = Duration::from_millis(1000);
 const SCROLLBACK_MAX_LINES: usize = 10_000;
 // Bound memory per terminal; wide or heavily styled rows may hit this first.
@@ -402,8 +464,8 @@ impl Vt {
                 keys,
                 key_event,
                 mouse,
+                last_mouse_report: Vec::new(),
                 mouse_event,
-                last_motion: None,
                 cols,
                 rows,
                 cell_h: 1,
@@ -416,6 +478,7 @@ impl Vt {
                 drawn: Default::default(),
                 seen: HashMap::new(),
                 seen_with: (0, 0),
+                placements_cache: RefCell::new(None),
                 win32: Default::default(),
             };
             vt.apply_theme();
@@ -459,6 +522,9 @@ impl Vt {
     /// state `frame` last updated. The render state also resolves images placed
     /// with Unicode placeholder cells, which the storage alone can't place.
     pub fn placements(&self) -> Vec<Placement> {
+        if let Some(placements) = self.placements_cache.borrow().as_ref() {
+            return placements.clone();
+        }
         let mut out = Vec::new();
         unsafe {
             let mut it: GhosttyRenderStateImageIterator = std::ptr::null_mut();
@@ -489,8 +555,11 @@ impl Vt {
                     get(GHOSTTY_RENDER_STATE_IMAGE_DATA_SOURCE_Y, &mut source[1] as *mut _ as *mut c_void);
                     get(GHOSTTY_RENDER_STATE_IMAGE_DATA_SOURCE_WIDTH, &mut source[2] as *mut _ as *mut c_void);
                     get(GHOSTTY_RENDER_STATE_IMAGE_DATA_SOURCE_HEIGHT, &mut source[3] as *mut _ as *mut c_void);
+                    let mut kind = GHOSTTY_RENDER_STATE_KITTY_PLACEMENT_KIND_FIXED;
+                    get(GHOSTTY_RENDER_STATE_IMAGE_DATA_KITTY_KIND, &mut kind as *mut _ as *mut c_void);
                     let below_text = layer != GHOSTTY_RENDER_STATE_IMAGE_LAYER_ABOVE_TEXT;
-                    out.push(Placement { image, generation, col, row, offset, width, height, source, z, below_text });
+                    let virtual_cells = kind == GHOSTTY_RENDER_STATE_KITTY_PLACEMENT_KIND_VIRTUAL;
+                    out.push(Placement { image, generation, col, row, offset, width, height, source, z, below_text, virtual_cells });
                 }
             }
             ghostty_render_state_image_iterator_free(it);
@@ -520,6 +589,7 @@ impl Vt {
             joins
         });
         out.sort_by_key(|p| (!p.below_text, p.z));
+        *self.placements_cache.borrow_mut() = Some(out.clone());
         out
     }
 
@@ -669,8 +739,11 @@ impl Vt {
 
     /// The link at a viewport cell: a link the program marked (OSC 8), or a
     /// URL or path in the text. Follows lines the terminal wrapped, also into
-    /// rows scrolled out of view.
-    pub fn link_at(&self, col: u16, row: u16, find: impl FnOnce(&str, usize) -> Option<std::ops::Range<usize>>) -> Option<LinkHit> {
+    /// rows scrolled out of view. Then tries the lines around joined, their
+    /// indentation dropped: programs like Claude Code break long paths onto
+    /// new lines themselves. `find` is told when its text holds lines joined; a
+    /// link found there wins when it's longer.
+    pub fn link_at(&self, col: u16, row: u16, mut find: impl FnMut(&str, usize, bool) -> Option<std::ops::Range<usize>>) -> Option<LinkHit> {
         if col >= self.cols || row >= self.rows {
             return None;
         }
@@ -684,65 +757,132 @@ impl Vt {
             p.y
         };
         let hovered = top + row as u32;
-        let wraps = |y: u32| unsafe {
+        // A URL longer than this many rows isn't one worth finding.
+        const REACH: u32 = 32;
+        let mut first = hovered;
+        while first > 0 && hovered - first < REACH && self.wraps(first - 1) {
+            first -= 1;
+        }
+        let mut last = hovered;
+        while last - hovered < REACH && self.wraps(last) && self.grid_ref(GHOSTTY_POINT_TAG_SCREEN, 0, last + 1).is_some() {
+            last += 1;
+        }
+        let mut rows: Vec<Row> = (first..=last).map_while(|y| self.link_row(y)).collect();
+        let (text, spots) = link_text(&rows);
+        let at = spots.iter().position(|s| s.y == hovered && s.x <= col && col < s.x + s.width)?;
+        let hit = self.link_in(&text, &spots, top, at, &mut find, false);
+        if spots[at].uri.is_some() {
+            return hit;
+        }
+
+        // Lines a program broke itself, joined: only across rows that reach
+        // the right edge, and only where the hovered word runs into one.
+        const BROKEN: u32 = 4;
+        let word = word_range(&text, spots[at].byte);
+        let mut above = Vec::new();
+        if text[..word.start].trim().is_empty() {
+            for y in (first.saturating_sub(BROKEN)..first).rev() {
+                match self.link_row(y) {
+                    Some(row) if row.full(self.cols) => above.push(row),
+                    _ => break,
+                }
+            }
+        }
+        let mut below = Vec::new();
+        if text[word.end..].trim().is_empty() && rows.last().is_some_and(|row| row.full(self.cols)) {
+            for y in last + 1..=last + BROKEN {
+                let Some(row) = self.link_row(y) else { break };
+                let full = row.full(self.cols);
+                below.push(row);
+                if !full {
+                    break;
+                }
+            }
+        }
+        let (group, up_most, down_most) = (rows.len(), above.len(), below.len());
+        rows.splice(0..0, above.into_iter().rev());
+        rows.extend(below);
+        // Fewest rows first; the longest link wins, so a break next to a
+        // slash doesn't stop at the folder before it. A join that leaves the
+        // hovered word as it was can't find anything new.
+        let mut tried = vec![text[word].to_owned()];
+        let mut best: Option<(LinkHit, String, Vec<Spot>, usize)> = None;
+        // Whether `find` last saw the link we'd return: it may keep what it saw.
+        let mut fresh = true;
+        for joined in 1..=up_most + down_most {
+            for up in joined.saturating_sub(down_most)..=joined.min(up_most) {
+                let start = up_most - up;
+                let (text, spots) = link_text(&rows[start..start + group + joined]);
+                let Some(at) = spots.iter().position(|s| s.y == hovered && s.x <= col && col < s.x + s.width) else { continue };
+                let word = &text[word_range(&text, spots[at].byte)];
+                if tried.iter().any(|t| t == word) {
+                    continue;
+                }
+                tried.push(word.to_owned());
+                let Some(found) = self.link_in(&text, &spots, top, at, &mut find, true) else { continue };
+                let longest = best.as_ref().map(|b| &b.0).or(hit.as_ref()).map_or(0, |h| h.target.len());
+                fresh = found.target.len() > longest;
+                if fresh {
+                    best = Some((found, text, spots, at));
+                }
+            }
+        }
+        match best {
+            Some((found, ..)) if fresh => Some(found),
+            Some((_, text, spots, at)) => self.link_in(&text, &spots, top, at, &mut find, true),
+            None if fresh => hit,
+            None => self.link_in(&text, &spots, top, at, &mut find, false),
+        }
+    }
+
+    /// Whether the terminal wrapped screen row `y` onto the next.
+    fn wraps(&self, y: u32) -> bool {
+        unsafe {
             let Some(r) = self.grid_ref(GHOSTTY_POINT_TAG_SCREEN, 0, y) else { return false };
             let mut line: GhosttyRow = Default::default();
             let mut wrap = false;
             ghostty_grid_ref_row(&r, &mut line) == GHOSTTY_SUCCESS
                 && ghostty_row_get(line, GHOSTTY_ROW_DATA_WRAP, &mut wrap as *mut _ as *mut c_void) == GHOSTTY_SUCCESS
                 && wrap
-        };
-        // A URL longer than this many rows isn't one worth finding.
-        const REACH: u32 = 32;
-        let mut first = hovered;
-        while first > 0 && hovered - first < REACH && wraps(first - 1) {
-            first -= 1;
         }
-        let mut last = hovered;
-        while last - hovered < REACH && wraps(last) && self.grid_ref(GHOSTTY_POINT_TAG_SCREEN, 0, last + 1).is_some() {
-            last += 1;
-        }
+    }
 
-        struct Spot {
-            y: u32,
-            x: u16,
-            width: u16,
-            byte: usize,
-            uri: Option<String>,
-        }
+    /// The text of screen row `y` and where each character shows.
+    fn link_row(&self, y: u32) -> Option<Row> {
+        let mut r = self.grid_ref(GHOSTTY_POINT_TAG_SCREEN, 0, y)?;
         let mut text = String::new();
         let mut spots: Vec<Spot> = Vec::new();
-        for y in first..=last {
-            let mut r = self.grid_ref(GHOSTTY_POINT_TAG_SCREEN, 0, y)?;
-            for x in 0..self.cols {
-                r.x = x;
-                let (wide, linked) = unsafe {
-                    let mut cell: GhosttyCell = Default::default();
-                    ghostty_grid_ref_cell(&r, &mut cell);
-                    let mut wide: GhosttyCellWide = GHOSTTY_CELL_WIDE_NARROW;
-                    ghostty_cell_get(cell, GHOSTTY_CELL_DATA_WIDE, &mut wide as *mut _ as *mut c_void);
-                    let mut linked = false;
-                    ghostty_cell_get(cell, GHOSTTY_CELL_DATA_HAS_HYPERLINK, &mut linked as *mut _ as *mut c_void);
-                    (wide, linked)
-                };
-                if wide == GHOSTTY_CELL_WIDE_SPACER_TAIL || wide == GHOSTTY_CELL_WIDE_SPACER_HEAD {
-                    continue;
-                }
-                let byte = text.len();
-                let mut cps = [0u32; 16];
-                let mut len = 0usize;
-                unsafe { ghostty_grid_ref_graphemes(&r, cps.as_mut_ptr(), cps.len(), &mut len) };
-                let before = text.len();
-                text.extend(cps[..len.min(cps.len())].iter().filter_map(|c| char::from_u32(*c)));
-                if text.len() == before {
-                    text.push(' ');
-                }
-                let uri = linked.then(|| hyperlink_uri(&r)).flatten();
-                let width = if wide == GHOSTTY_CELL_WIDE_WIDE { 2 } else { 1 };
-                spots.push(Spot { y, x, width, byte, uri });
+        for x in 0..self.cols {
+            r.x = x;
+            let (wide, linked) = unsafe {
+                let mut cell: GhosttyCell = Default::default();
+                ghostty_grid_ref_cell(&r, &mut cell);
+                let mut wide: GhosttyCellWide = GHOSTTY_CELL_WIDE_NARROW;
+                ghostty_cell_get(cell, GHOSTTY_CELL_DATA_WIDE, &mut wide as *mut _ as *mut c_void);
+                let mut linked = false;
+                ghostty_cell_get(cell, GHOSTTY_CELL_DATA_HAS_HYPERLINK, &mut linked as *mut _ as *mut c_void);
+                (wide, linked)
+            };
+            if wide == GHOSTTY_CELL_WIDE_SPACER_TAIL || wide == GHOSTTY_CELL_WIDE_SPACER_HEAD {
+                continue;
             }
+            let byte = text.len();
+            let mut cps = [0u32; 16];
+            let mut len = 0usize;
+            unsafe { ghostty_grid_ref_graphemes(&r, cps.as_mut_ptr(), cps.len(), &mut len) };
+            text.extend(cps[..len.min(cps.len())].iter().filter_map(|c| char::from_u32(*c)));
+            if text.len() == byte {
+                text.push(' ');
+            }
+            let uri = linked.then(|| hyperlink_uri(&r)).flatten();
+            let width = if wide == GHOSTTY_CELL_WIDE_WIDE { 2 } else { 1 };
+            spots.push(Spot { y, x, width, byte, uri });
         }
-        let at = spots.iter().position(|s| s.y == hovered && s.x <= col && col < s.x + s.width)?;
+        Some(Row { text, spots, wraps: self.wraps(y) })
+    }
+
+    /// The link `find` sees in `text` at spot `at`.
+    fn link_in(&self, text: &str, spots: &[Spot], top: u32, at: usize, find: &mut impl FnMut(&str, usize, bool) -> Option<std::ops::Range<usize>>, joined: bool) -> Option<LinkHit> {
         let (target, chosen): (String, Vec<&Spot>) = match spots[at].uri.clone() {
             Some(uri) => {
                 let same = |s: &&Spot| s.uri.as_deref() == Some(uri.as_str());
@@ -751,7 +891,7 @@ impl Vt {
                 (uri, spots[start..end].iter().collect())
             }
             None => {
-                let range = find(&text, spots[at].byte)?;
+                let range = find(text, spots[at].byte, joined)?;
                 (text[range.clone()].to_owned(), spots.iter().filter(|s| range.contains(&s.byte)).collect())
             }
         };
@@ -772,6 +912,7 @@ impl Vt {
     }
 
     pub fn write(&mut self, bytes: &[u8]) {
+        self.placements_cache.get_mut().take();
         self.win32.watch(bytes);
         unsafe { ghostty_terminal_vt_write(self.term, bytes.as_ptr(), bytes.len()) };
     }
@@ -788,6 +929,7 @@ impl Vt {
         if cols == 0 || rows == 0 {
             return;
         }
+        self.placements_cache.get_mut().take();
         self.cols = cols;
         self.rows = rows;
         self.cell_h = cell_h.max(1);
@@ -836,12 +978,14 @@ impl Vt {
     }
 
     pub fn scroll_viewport(&mut self, delta: isize) {
+        self.placements_cache.get_mut().take();
         let mut s = GhosttyTerminalScrollViewport { tag: GHOSTTY_SCROLL_VIEWPORT_DELTA, ..Default::default() };
         s.value.delta = delta;
         unsafe { ghostty_terminal_scroll_viewport(self.term, s) };
     }
 
     pub fn scroll_to_bottom(&mut self) {
+        self.placements_cache.get_mut().take();
         let s = GhosttyTerminalScrollViewport { tag: GHOSTTY_SCROLL_VIEWPORT_BOTTOM, ..Default::default() };
         unsafe { ghostty_terminal_scroll_viewport(self.term, s) };
     }
@@ -897,6 +1041,8 @@ impl Vt {
 
     /// Updates the render state (respecting synchronized output) and reads one frame.
     pub fn frame(&mut self) -> Frame {
+        // Placements come from the render state this updates.
+        self.placements_cache.get_mut().take();
         unsafe {
             if let Some(since) = self.shared.held_since
                 && since.elapsed() > MAX_HOLD
@@ -1021,10 +1167,14 @@ impl Vt {
                     ghostty_render_state_row_cells_get(c, GHOSTTY_RENDER_STATE_ROW_CELLS_DATA_GRAPHEMES_BUF, cps.as_mut_ptr() as *mut c_void);
                     text = cps.into_iter().filter_map(char::from_u32).collect();
                 }
-                // A kitty image placeholder: the image is drawn there instead (`placements`).
-                if text.starts_with('\u{10EEEE}') {
-                    text.clear();
-                }
+            }
+
+            // A kitty image placeholder: the image is drawn there instead (`placements`),
+            // with no glyph or decoration, image or not.
+            if text.starts_with('\u{10eeee}') {
+                text.clear();
+                style.underline = 0;
+                style.strikethrough = false;
             }
 
             // Contrast adjustment is opt-in; graphics always keep their colors.
@@ -1102,13 +1252,6 @@ impl Vt {
         let (cols, rows, cw, ch) = size;
         let (cwi, chi) = (cw.round().max(1.0), ch.round().max(1.0));
         let (x, y) = (x / cw.max(1.0) * cwi, y / ch.max(1.0) * chi);
-        // As Ghostty: motion is reported once per cell, except in SGR-pixels mode.
-        let cell = ((x / cwi).max(0.0) as u32, (y / chi).max(0.0) as u32);
-        if action != GHOSTTY_MOUSE_ACTION_MOTION {
-            self.last_motion = None;
-        } else if !self.mode(SGR_PIXELS) && self.last_motion.replace(cell) == Some(cell) {
-            return Vec::new();
-        }
         unsafe {
             ghostty_mouse_encoder_setopt_from_terminal(self.mouse, self.term);
             let s = GhosttyMouseEncoderSize {
@@ -1132,9 +1275,15 @@ impl Vt {
             let mut buf = [0u8; 64];
             let mut len = 0usize;
             let r = ghostty_mouse_encoder_encode(self.mouse, e, buf.as_mut_ptr() as *mut _, buf.len(), &mut len);
-            if r != GHOSTTY_SUCCESS {
+            if r != GHOSTTY_SUCCESS || len == 0 {
                 return Vec::new();
             }
+            // Refreshing the encoder's terminal/size options resets its cell tracking.
+            if action == GHOSTTY_MOUSE_ACTION_MOTION && self.last_mouse_report == buf[..len] {
+                return Vec::new();
+            }
+            self.last_mouse_report.clear();
+            self.last_mouse_report.extend_from_slice(&buf[..len]);
             buf[..len].to_vec()
         }
     }
@@ -1368,18 +1517,27 @@ mod tests {
     }
 
     #[test]
-    fn hover_reaches_programs_that_ask_for_any_motion() {
-        // Mode 1003 programs (Claude Code, TUIs with hover) get motion with no
-        // button down, once per cell; mode 1000 programs get none.
+    fn mouse_hover_tracks_only_changed_cells_and_respects_button_mode() {
         let mut vt = Vt::new(80, 2);
         let size = (80, 2, 10.0, 20.0);
-        let hover = |vt: &mut Vt, x: f32| String::from_utf8_lossy(&vt.encode_mouse(GHOSTTY_MOUSE_ACTION_MOTION, None, 0, x, 5.0, size, false)).into_owned();
-        vt.write(b"\x1b[?1000h\x1b[?1006h");
-        assert_eq!(hover(&mut vt, 15.0), "");
-        vt.write(b"\x1b[?1003h");
-        assert_eq!(hover(&mut vt, 25.0), "\x1b[<35;3;1M");
-        assert_eq!(hover(&mut vt, 27.0), "", "same cell");
-        assert_eq!(hover(&mut vt, 35.0), "\x1b[<35;4;1M");
+        vt.write(b"\x1b[?1003h\x1b[?1006h");
+        assert_eq!(vt.encode_mouse(GHOSTTY_MOUSE_ACTION_MOTION, None, 0, 15.0, 5.0, size, false), b"\x1b[<35;2;1M");
+        assert!(vt.encode_mouse(GHOSTTY_MOUSE_ACTION_MOTION, None, 0, 16.0, 5.0, size, false).is_empty());
+        assert_eq!(vt.encode_mouse(GHOSTTY_MOUSE_ACTION_MOTION, None, 0, 25.0, 5.0, size, false), b"\x1b[<35;3;1M");
+        vt.write(b"\x1b[?1002h");
+        assert!(vt.encode_mouse(GHOSTTY_MOUSE_ACTION_MOTION, None, 0, 35.0, 5.0, size, false).is_empty());
+        assert_eq!(vt.encode_mouse(GHOSTTY_MOUSE_ACTION_MOTION, Some(GHOSTTY_MOUSE_BUTTON_LEFT), 0, 35.0, 5.0, size, true), b"\x1b[<32;4;1M");
+        vt.write(b"\x1b[?1003h\x1b[?1016h");
+        assert_eq!(vt.encode_mouse(GHOSTTY_MOUSE_ACTION_MOTION, None, 0, 15.0, 5.0, size, false), b"\x1b[<35;15;5M");
+        assert_eq!(vt.encode_mouse(GHOSTTY_MOUSE_ACTION_MOTION, None, 0, 16.0, 5.0, size, false), b"\x1b[<35;16;5M");
+    }
+
+    #[test]
+    fn button_motion_needs_the_views_press_ownership_gate() {
+        let mut vt = Vt::new(80, 2);
+        vt.write(b"\x1b[?1002h\x1b[?1006h");
+        // Ghostty trusts the event's button even if this pane never saw a press.
+        assert_eq!(vt.encode_mouse(GHOSTTY_MOUSE_ACTION_MOTION, Some(GHOSTTY_MOUSE_BUTTON_LEFT), 0, 35.0, 5.0, (80, 2, 10.0, 20.0), false), b"\x1b[<32;4;1M");
     }
 
     #[test]
@@ -1404,11 +1562,171 @@ mod tests {
         let p = vt.placements();
         assert_eq!(p.len(), 1, "{p:?}");
         assert_eq!((p[0].image, p[0].col, p[0].row), (7, 0, 0));
+        assert_eq!((p[0].width, p[0].height), (1, 1));
         let (w, h, bgra) = vt.image_bgra(7, p[0].source).unwrap();
         assert_eq!((w, h), (1, 1));
         assert_eq!(&bgra[..], &[0, 0, 255, 255]);
         let reply = String::from_utf8(vt.take_replies()).unwrap();
         assert!(reply.contains("i=7") && reply.contains("OK"), "{reply:?}");
+    }
+
+    /// Placements as the next paint sees them: the render state updates first.
+    fn placed(vt: &mut Vt) -> Vec<Placement> {
+        vt.frame();
+        vt.placements()
+    }
+
+    fn virtual_image(vt: &mut Vt, id: u32, placement: u32) {
+        use base64::Engine;
+        let pixels = base64::engine::general_purpose::STANDARD.encode([255u8, 0, 0].repeat(32));
+        vt.write(format!("\x1b_Ga=T,U=1,f=24,i={id},p={placement},s=8,v=4,c=8,r=4,q=2;{pixels}\x1b\\").as_bytes());
+    }
+
+    fn placeholder(row: usize, col: usize, high: Option<usize>) -> String {
+        let marks = ['\u{305}', '\u{30d}', '\u{30e}', '\u{310}', '\u{312}', '\u{33d}', '\u{33e}', '\u{33f}'];
+        format!("\u{10eeee}{}{}{}", marks[row], marks[col], high.map(|i| marks[i].to_string()).unwrap_or_default())
+    }
+
+    #[test]
+    fn kitty_placeholders_resolve_slices_and_scroll_with_their_cells() {
+        let mut vt = Vt::new(20, 6);
+        vt.resize(20, 6, 8, 8);
+        virtual_image(&mut vt, 7, 0);
+        vt.write(b"\x1b[38;5;7m");
+        for row in 0..4 {
+            for col in 0..8 {
+                vt.write(placeholder(row, col, None).as_bytes());
+            }
+            vt.write(b"\r\n");
+        }
+        let frame = vt.frame();
+        assert!(frame.rows.iter().flat_map(|r| r.iter()).all(|c| c.text.is_empty()));
+        // The four row slices join into one image (`placements`).
+        let p = placed(&mut vt);
+        assert_eq!(p.len(), 1, "{p:?}");
+        assert_eq!((p[0].image, p[0].col, p[0].row, p[0].width, p[0].height), (7, 0, 0, 64, 32));
+        assert_eq!(p[0].source, [0, 0, 8, 4]);
+        vt.write(b"\x1b[6;1H\n\n");
+        vt.frame();
+        let p = placed(&mut vt);
+        // Rows 0 and 1 scrolled off: what stays is source rows 2 and 3, joined.
+        assert_eq!(p.len(), 1, "{p:?}");
+        assert_eq!((p[0].row, p[0].height, p[0].source), (0, 16, [0, 2, 8, 2]));
+    }
+
+    #[test]
+    fn kitty_placeholders_support_partial_runs_and_omitted_diacritics() {
+        let mut vt = Vt::new(20, 6);
+        vt.resize(20, 6, 8, 8);
+        virtual_image(&mut vt, 7, 0);
+        vt.write(b"\x1b[38;5;7m");
+        vt.write(format!("{}\u{10eeee}  {}", placeholder(2, 3, None), placeholder(2, 7, None)).as_bytes());
+        let p = placed(&mut vt);
+        assert_eq!(p.len(), 2, "{p:?}");
+        assert_eq!((p[0].col, p[0].width, p[0].source), (0, 16, [3, 2, 2, 1]));
+        assert_eq!((p[1].col, p[1].width, p[1].source), (4, 8, [7, 2, 1, 1]));
+    }
+
+    #[test]
+    fn kitty_placeholders_decode_ids_before_theme_and_contrast() {
+        let mut vt = Vt::new(20, 6);
+        vt.resize(20, 6, 8, 8);
+        virtual_image(&mut vt, 0x01020304, 0x050607);
+        virtual_image(&mut vt, 263, 0);
+        let mut theme = vt.theme.clone();
+        theme.minimum_contrast = 21.0;
+        theme.palette16[7] = Rgb(255, 0, 0);
+        vt.set_theme(theme);
+        vt.write(b"\x1b[38;2;2;3;4;58;2;5;6;7m");
+        vt.write(placeholder(1, 2, Some(1)).as_bytes());
+        vt.write(b"\x1b[59;38;2;0;1;7m");
+        vt.write(placeholder(3, 4, None).as_bytes());
+        vt.frame();
+        let p = placed(&mut vt);
+        assert_eq!(p.len(), 2, "{p:?}");
+        assert_eq!((p[0].image, p[0].source), (0x01020304, [2, 1, 1, 1]));
+        assert_eq!((p[1].image, p[1].source), (263, [4, 3, 1, 1]));
+    }
+
+    #[test]
+    fn kitty_placeholders_without_images_never_draw_text_or_decorations() {
+        let mut vt = Vt::new(20, 6);
+        vt.write("\x1b[4;9m\u{10eeee}\u{305}\u{30d}".as_bytes());
+        let frame = vt.frame();
+        let c = &frame.rows[0][0];
+        assert!(c.text.is_empty() && !c.underline && !c.strike);
+        assert!(placed(&mut vt).is_empty());
+    }
+
+    #[test]
+    fn kitty_placeholder_cache_tracks_writes_resize_and_viewport() {
+        let mut vt = Vt::new(20, 6);
+        vt.resize(20, 6, 8, 8);
+        virtual_image(&mut vt, 7, 0);
+        vt.write(b"\x1b[38;5;7m");
+        vt.write(placeholder(0, 0, None).as_bytes());
+        let first = placed(&mut vt);
+        assert_eq!(first, placed(&mut vt));
+        assert!(vt.placements_cache.borrow().is_some());
+        vt.resize(20, 6, 16, 16);
+        assert!(vt.placements_cache.borrow().is_none());
+        assert_eq!(placed(&mut vt)[0].width, 16);
+        vt.write(b"\x1b[6;1H\n\n");
+        assert!(placed(&mut vt).is_empty());
+        vt.scroll_viewport(-2);
+        assert_eq!(placed(&mut vt).len(), 1);
+        vt.scroll_to_bottom();
+        assert!(placed(&mut vt).is_empty());
+        vt.scroll_viewport(-2);
+        assert_eq!(placed(&mut vt).len(), 1);
+        vt.write(b"\x1b_Ga=d,d=I,i=7,q=2\x1b\\");
+        assert!(placed(&mut vt).is_empty());
+    }
+
+    #[test]
+    fn kitty_placeholders_repeat_enlarged_source_pixels_without_holes() {
+        let mut vt = Vt::new(20, 6);
+        vt.resize(20, 6, 8, 8);
+        vt.write(b"\x1b_Ga=T,U=1,f=24,i=7,s=1,v=1,c=4,r=4,q=2;/wAA\x1b\\\x1b[38;5;7m");
+        for row in 0..4 {
+            for col in 0..4 {
+                vt.write(placeholder(row, col, None).as_bytes());
+            }
+            vt.write(b"\r\n");
+        }
+        // One source pixel over 4x4 cells: the row slices join into one image
+        // that covers the whole area, with no holes between rows.
+        let p = placed(&mut vt);
+        assert_eq!(p.len(), 1, "{p:?}");
+        assert_eq!((p[0].source, p[0].width, p[0].height), ([0, 0, 1, 1], 32, 32));
+    }
+
+    #[test]
+    fn kitty_placeholders_use_the_fixed_layer_below_nonnegative_direct_images() {
+        let mut vt = Vt::new(20, 6);
+        vt.resize(20, 6, 8, 8);
+        virtual_image(&mut vt, 7, 1);
+        vt.write(b"\x1b_Ga=p,U=1,i=7,p=1,c=8,r=4,z=10,q=2\x1b\\\x1b[38;5;7m");
+        vt.write(placeholder(0, 0, None).as_bytes());
+        vt.write(b"\x1b[H\x1b_Ga=T,f=24,i=8,s=1,v=1,z=1,q=2;/wAA\x1b\\");
+        let placements = placed(&mut vt);
+        assert_eq!(placements.len(), 2);
+        assert_eq!((placements[0].image, placements[0].z), (7, -1));
+        assert_eq!((placements[1].image, placements[1].z), (8, 1));
+    }
+
+    #[test]
+    fn kitty_placeholders_center_images_without_stretching() {
+        let mut vt = Vt::new(20, 6);
+        vt.resize(20, 6, 8, 20);
+        virtual_image(&mut vt, 7, 0);
+        vt.write(b"\x1b[38;5;7m");
+        vt.write(placeholder(1, 0, None).as_bytes());
+        vt.write(placeholder(1, 1, None).as_bytes());
+        let p = placed(&mut vt);
+        assert_eq!(p.len(), 1, "{p:?}");
+        assert_eq!(p[0].source, [0, 0, 2, 2]);
+        assert_eq!((p[0].width, p[0].height, p[0].offset), (16, 16, [0, 4]));
     }
 
     #[test]
@@ -1484,11 +1802,11 @@ mod tests {
     fn links_follow_wrapped_lines() {
         let mut vt = Vt::new(20, 4);
         vt.write(b"go https://example.com/a/long/path ok");
-        let hit = vt.link_at(5, 1, crate::links::find).unwrap();
+        let hit = vt.link_at(5, 1, found).unwrap();
         assert_eq!(hit.target, "https://example.com/a/long/path");
         assert_eq!(hit.spans, vec![(0, 3, 19), (1, 0, 13)]);
-        assert_eq!(vt.link_at(1, 0, crate::links::find), None);
-        assert_eq!(vt.link_at(16, 1, crate::links::find), None);
+        assert_eq!(vt.link_at(1, 0, found), None);
+        assert_eq!(vt.link_at(16, 1, found), None);
     }
 
     #[test]
@@ -1496,19 +1814,117 @@ mod tests {
         let mut vt = Vt::new(10, 2);
         vt.write(b"https://example.com/abcdefgh");
         // Three rows of link on a two-row screen: the first scrolled away.
-        let hit = vt.link_at(2, 0, crate::links::find).unwrap();
+        let hit = vt.link_at(2, 0, found).unwrap();
         assert_eq!(hit.target, "https://example.com/abcdefgh");
         assert_eq!(hit.spans, vec![(0, 0, 9), (1, 0, 7)]);
+    }
+
+    #[test]
+    fn links_join_lines_a_program_broke() {
+        let mut vt = Vt::new(20, 4);
+        // Broken by the program, as Claude Code does: a newline, then indentation.
+        vt.write(b"  see /tmp/abc/de\r\n  fg/x.png ok");
+        let whole = |text: &str, at: usize, _| {
+            let range = crate::links::find(text, at)?;
+            (&text[range.clone()] == "/tmp/abc/defg/x.png").then_some(range)
+        };
+        for (col, row) in [(8, 0), (3, 1)] {
+            let hit = vt.link_at(col, row, whole).unwrap();
+            assert_eq!(hit.target, "/tmp/abc/defg/x.png");
+            assert_eq!(hit.spans, vec![(0, 6, 16), (1, 2, 9)]);
+        }
+        // A word ending the line above stays out of it.
+        let mut vt = Vt::new(16, 4);
+        vt.write(b"> I think when\r\n  /tmp/abc/de\r\n  fg/x.png ok");
+        let hit = vt.link_at(3, 1, whole).unwrap();
+        assert_eq!(hit.spans, vec![(1, 2, 12), (2, 2, 9)]);
+        assert_eq!(vt.link_at(3, 2, whole).unwrap().target, "/tmp/abc/defg/x.png");
+        let mut vt = Vt::new(20, 4);
+        vt.write(b"  see /tmp/abc/de\r\n  fg/x.png ok");
+        // What reads as a link on its own line keeps it unless the join is one.
+        let unjoined = |text: &str, at: usize, joined: bool| crate::links::find(text, at).filter(|_| !joined);
+        assert_eq!(vt.link_at(8, 0, unjoined).unwrap().target, "/tmp/abc/de");
+        assert_eq!(vt.link_at(13, 1, whole), None);
+    }
+
+    #[test]
+    fn joined_lines_prefer_the_longest_link() {
+        // Broken next to slashes: the first rows name folders that exist.
+        let mut vt = Vt::new(15, 4);
+        vt.write(b"  /Users/me/ab\r\n  /Workspace/o\r\n  /x.rs end");
+        let exists = |text: &str, at: usize, _| {
+            let range = crate::links::find(text, at)?;
+            ["/Users/me/ab", "/Users/me/ab/Workspace/o", "/Users/me/ab/Workspace/o/x.rs"].contains(&&text[range.clone()]).then_some(range)
+        };
+        for (col, row) in [(4, 0), (4, 1), (3, 2)] {
+            assert_eq!(vt.link_at(col, row, exists).unwrap().target, "/Users/me/ab/Workspace/o/x.rs");
+        }
+    }
+
+    #[test]
+    fn only_rows_reaching_the_edge_join() {
+        let exists = |text: &str, at: usize, _| {
+            let range = crate::links::find(text, at)?;
+            ["src/", "src/vt.rs", "/tmp/ab", "/tmp/ab/cd/x.png"].contains(&&text[range.clone()]).then_some(range)
+        };
+        // A folder an agent lists, its files below: not one path.
+        let mut vt = Vt::new(30, 4);
+        vt.write(b"src/\r\n  vt.rs");
+        assert_eq!(vt.link_at(1, 0, exists), None);
+        assert_eq!(vt.link_at(3, 1, exists), None);
+        // A blank line ends what a program broke.
+        let mut vt = Vt::new(11, 4);
+        vt.write(b"see /tmp/ab\r\n\r\n/cd/x.png");
+        assert_eq!(vt.link_at(6, 0, exists).unwrap().target, "/tmp/ab");
+    }
+
+    #[test]
+    fn joined_lines_tell_find() {
+        let mut vt = Vt::new(26, 4);
+        vt.write(b"Visit https://example.com\r\n  and then run it");
+        // Glued, the URL would take in the word below it.
+        assert_eq!(vt.link_at(3, 1, found).unwrap().target, "https://example.comand");
+        let unjoined = |text: &str, at: usize, joined: bool| crate::links::find(text, at).filter(|_| !joined);
+        assert_eq!(vt.link_at(3, 1, unjoined), None);
+        assert_eq!(vt.link_at(8, 0, unjoined).unwrap().target, "https://example.com");
+    }
+
+    #[test]
+    fn find_last_sees_the_link_returned() {
+        let mut vt = Vt::new(6, 4);
+        vt.write(b"  xx/a\r\n  b");
+        let seen = std::cell::RefCell::new(String::new());
+        // Joined, a shorter link than the row's own: the row's wins.
+        let find = |text: &str, at: usize, joined: bool| {
+            let range = if joined { at..at + 1 } else { crate::links::word(text, at)? };
+            *seen.borrow_mut() = text[range.clone()].to_owned();
+            Some(range)
+        };
+        assert_eq!(vt.link_at(3, 0, find).unwrap().target, "xx/a");
+        assert_eq!(*seen.borrow(), "xx/a");
+    }
+
+    #[test]
+    fn joins_that_leave_the_word_alone_skip_find() {
+        let mut vt = Vt::new(13, 4);
+        vt.write(b"one two three\r\nfour five six\r\nseven");
+        let mut calls = 0;
+        assert_eq!(vt.link_at(6, 1, |_: &str, _, _| { calls += 1; None }), None);
+        assert_eq!(calls, 1);
+    }
+
+    fn found(text: &str, at: usize, _: bool) -> Option<std::ops::Range<usize>> {
+        crate::links::find(text, at)
     }
 
     #[test]
     fn marked_links_open_their_uri() {
         let mut vt = Vt::new(30, 2);
         vt.write(b"see \x1b]8;;https://herdr.dev\x1b\\the docs\x1b]8;;\x1b\\ now");
-        let hit = vt.link_at(6, 0, crate::links::find).unwrap();
+        let hit = vt.link_at(6, 0, found).unwrap();
         assert_eq!(hit.target, "https://herdr.dev");
         assert_eq!(hit.spans, vec![(0, 4, 11)]);
-        assert_eq!(vt.link_at(13, 0, crate::links::find), None);
+        assert_eq!(vt.link_at(13, 0, found), None);
     }
 
     #[test]

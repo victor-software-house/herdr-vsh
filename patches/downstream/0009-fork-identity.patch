@@ -35,7 +35,7 @@ Drop-When: The fork stops shipping as a separate app beside Herdr.
  create mode 100644 docs/vsh/brand.md
 
 diff --git a/Cargo.toml b/Cargo.toml
-index dedd9da501433eb88e79056ea31fd415e10f39e1..cb448f46956adbbcf150d685ecf4a0b2f3b97264 100644
+index 2fa587a690b3796fb7f92781b488fd926f3ebf70..25ead3452ffc675533140b794fcead8f22139d00 100644
 --- a/Cargo.toml
 +++ b/Cargo.toml
 @@ -36,6 +36,11 @@ fancy-regex = "0.19"
@@ -123,7 +123,7 @@ index 9e6b9c78f24061df9060eb643b33854f1b883a88..a4dfe92d24f0db11bdf2f69b81cd0524
  Input-SHA256: e58cb0de2dde300bcda769ca993fde2737f42c0274082f038621ab22975a49e2 about.toml
  Input-SHA256: 84a7a98c82140fb12c37fe42b93805baa16024cb3e5acc599b7ffe612c55d847 assets/fonts/LICENSE-SymbolsNerdFont.txt
 diff --git a/defaults/AGENTS.md b/defaults/AGENTS.md
-index 86299f56d9a65a758911913cce939f37f5cdc5f3..059986a564492d25d12c926037666c5d54f2a8f4 100644
+index e54dad71f2334bf33fb4f252d32c80a633ba79a6..128d4806943c60181695f87397a839e67beeb064 100644
 --- a/defaults/AGENTS.md
 +++ b/defaults/AGENTS.md
 @@ -16,13 +16,13 @@ from the same parts you have.
@@ -146,12 +146,12 @@ index 86299f56d9a65a758911913cce939f37f5cdc5f3..059986a564492d25d12c926037666c5d
  - Edits apply at once. If a file is invalid, the app keeps the last good
    version and writes why to `<name>.error` (`layout.error`, `keys.error`,
    `settings.error`, `programs.error`). Check after every edit.
--- `herdr-app check <mod folder>` loads a mod once and reports what's wrong.
-+- `herdr-vsh check <mod folder>` loads a mod once and reports what's wrong.
-   Never call a mod done without a passing check.
- - **Escape hatch:** `ctrl-alt-shift-escape` always works: it sets the shown
-   layout and `keys.json` aside (`*.reset-<time>`) and goes back to the
-@@ -59,7 +59,7 @@ commands. They're rewritten on every start to match this version.
+-- `herdr-app check <mod folder>` loads a mod once and checks its initial
++- `herdr-vsh check <mod folder>` loads a mod once and checks its initial
+   description and eager native elements, including virtual lists and motion.
+   It does not lay out the mod or run deferred rows, nested renders, or later
+   async states. Never call a mod done without a passing check; also try it
+@@ -62,7 +62,7 @@ commands. They're rewritten on every start to match this version.
  
  ## Seeing the window
  
@@ -160,7 +160,7 @@ index 86299f56d9a65a758911913cce939f37f5cdc5f3..059986a564492d25d12c926037666c5d
  and prints its absolute path (default: `herdr-shot.png` in your current
  folder). Use it when debugging mod UIs: inspect spacing, colors, terminal
  images, overlays, popups and floats. It captures the app, not the desktop,
-@@ -90,7 +90,7 @@ If `shared.json` is invalid, Herdr logs a warning and keeps it as
+@@ -93,7 +93,7 @@ If `shared.json` is invalid, Herdr logs a warning and keeps it as
  
  Every layout shows the same world; a layout may show less, never a
  different one. Each machine keeps its spaces, tabs and splits in its core's
@@ -169,7 +169,7 @@ index 86299f56d9a65a758911913cce939f37f5cdc5f3..059986a564492d25d12c926037666c5d
  not their focus, zoom or attention. Use commands to change structure; there
  is no `spaces.json`. On simultaneous edits the newest accepted document wins
  (no merging); structural commands fail while that machine's layout is unavailable.
-@@ -180,8 +180,8 @@ look. The theme picker overrides any layout. To change a shipped layout's
+@@ -186,8 +186,8 @@ look. The theme picker overrides any layout. To change a shipped layout's
  look beyond that, or its structure/code, clone it and edit the clone:
  
  ```sh
@@ -180,7 +180,7 @@ index 86299f56d9a65a758911913cce939f37f5cdc5f3..059986a564492d25d12c926037666c5d
  ```
  
  The default clone name is `<name>-copy`; an existing name is refused.
-@@ -423,7 +423,7 @@ folder on GitHub):
+@@ -431,7 +431,7 @@ folder on GitHub):
     recipe instead.
  4. A mod's `keys.json`: merge it into the person's. Add its sections and
     keys, and ask before replacing a key they already use.
@@ -189,7 +189,7 @@ index 86299f56d9a65a758911913cce939f37f5cdc5f3..059986a564492d25d12c926037666c5d
     The person's own layout stays as it was; `ctrl-shift-l` switches back,
     and deleting the files removes it.
  
-@@ -486,10 +486,10 @@ the build doesn't do.
+@@ -497,10 +497,10 @@ the build doesn't do.
  ## Commands
  
  The one way to change anything; keys, mods (`run(name, args)`), menus and
@@ -202,7 +202,7 @@ index 86299f56d9a65a758911913cce939f37f5cdc5f3..059986a564492d25d12c926037666c5d
  The main ones:
  
  - Spaces: `space.new {name?, folder?, tab?, argv?, task?, machine?}`
-@@ -555,14 +555,14 @@ command says what's missing.
+@@ -578,14 +578,14 @@ command says what's missing.
  From a shell:
  
  ```sh
@@ -223,16 +223,16 @@ index 86299f56d9a65a758911913cce939f37f5cdc5f3..059986a564492d25d12c926037666c5d
  "terminal" }`, `{ "pane", "terminal" }`) or `{ "error": "..." }` and exits 1.
  
  ## The person: `settings.json`
-@@ -579,7 +579,7 @@ What's about the user, never a look:
+@@ -602,7 +602,7 @@ What's about the user, never a look:
    When an agent needs the person, or finishes while they aren't looking at
    it, Herdr plays a sound and (unless they're looking) posts a toast that
    goes there when clicked. `done` / `blocked` replace the bundled MP3s
--  (path absolute or relative to `~/.config/herdr-app`).
-+  (path absolute or relative to `~/.config/herdr-vsh`).
+-  (path absolute or relative to `~/.config/herdr-app`). Changes apply live,
++  (path absolute or relative to `~/.config/herdr-vsh`). Changes apply live,
+   including the Play buttons in Settings > Alerts.
  - `core`: the herdr-core binary to use, when it isn't where Herdr looks
    (PATH, the login shell's PATH, `~/.local/bin`, Homebrew, mise, Nix,
-   cargo). Read at start.
-@@ -625,7 +625,7 @@ What's about the user, never a look:
+@@ -649,7 +649,7 @@ What's about the user, never a look:
    macOS releases require Apple Silicon; Intel Macs must build from source.
    Keep signed macOS bundles unchanged: don't edit their Info.plist or
    re-sign them. On launch, an installed macOS bundle creates or repairs its
@@ -241,7 +241,7 @@ index 86299f56d9a65a758911913cce939f37f5cdc5f3..059986a564492d25d12c926037666c5d
    apps' links alone. Disk-image and translocated launches don't create it.
    Finder launches load the login shell's PATH, with the usual install
    folders as a fallback.
-@@ -694,7 +694,7 @@ has 120 programs (agents, editors, runtimes, tools, databases, infra);
+@@ -720,7 +720,7 @@ has 120 programs (agents, editors, runtimes, tools, databases, infra);
  ## Mods: `mods/<name>/`
  
  ```
@@ -250,7 +250,7 @@ index 86299f56d9a65a758911913cce939f37f5cdc5f3..059986a564492d25d12c926037666c5d
    main.js       the mod (required)
    mod.json    where it first appears: { "place": "right" | "left" | "top" | "bottom" | "none", "size": 320 }
    *.js, *.svg   more modules ("./ui.js"), its own icons
-@@ -706,7 +706,7 @@ has 120 programs (agents, editors, runtimes, tools, databases, infra);
+@@ -732,7 +732,7 @@ has 120 programs (agents, editors, runtimes, tools, databases, infra);
    (not files the app writes: `jsconfig.json`, `.d.ts`, hidden ones,
    `node_modules`). The old build's tasks and timers stop: a loop ends at its
    next `cx` use. A broken save keeps the old version running and shows in
@@ -259,7 +259,7 @@ index 86299f56d9a65a758911913cce939f37f5cdc5f3..059986a564492d25d12c926037666c5d
    on `globalThis` out of the module's top level.
  - A copy starts the first time it shows, then stays alive while its block is in
    the layout, shown or not (a hidden column, the other child of a stack, a pane
-@@ -714,7 +714,7 @@ has 120 programs (agents, editors, runtimes, tools, databases, infra);
+@@ -740,7 +740,7 @@ has 120 programs (agents, editors, runtimes, tools, databases, infra);
    timers keep running while hidden, so poll gently. Another layout starts its
    mods fresh (pane mods belong to their tab and stay); a block removed or given
    another mod or props starts over. `<mod>.<command>` reaches shown copies only.
@@ -268,7 +268,7 @@ index 86299f56d9a65a758911913cce939f37f5cdc5f3..059986a564492d25d12c926037666c5d
    `image("mods/<name>/logo.svg")` (full color), `svg("mods/<name>/icon.svg")`
    (tinted with the text color).
  - The defaults are mods too, read them as examples: `spaces`, `agents`,
-@@ -736,7 +736,7 @@ has 120 programs (agents, editors, runtimes, tools, databases, infra);
+@@ -762,7 +762,7 @@ has 120 programs (agents, editors, runtimes, tools, databases, infra);
  ### Check before you finish
  
  ```sh
@@ -277,7 +277,7 @@ index 86299f56d9a65a758911913cce939f37f5cdc5f3..059986a564492d25d12c926037666c5d
  ```
  
  Loads the mod, renders it once, exits nonzero with the exact error. Run it
-@@ -905,14 +905,14 @@ All of it is in `herdr.d.ts`. In short:
+@@ -931,14 +931,14 @@ All of it is in `herdr.d.ts`. In short:
  
  Mods are trusted code: commands and network access (including `fetch`) are unrestricted.
  Other built-ins: `localStorage` (per mod copy), `console.log`, `fetch`,
@@ -309,7 +309,7 @@ index 7304a28df59256b868d88af0c5089f3e45eb88ff..d094880a3715966814b1334a5948797b
  const APPEARANCES = [
    [null, "System"],
 diff --git a/defaults/herdr.d.ts b/defaults/herdr.d.ts
-index c9db3736db76f4bf63605130a39308df5db8d9ce..cab54dc75a77467856fc313628e42a971db55785 100644
+index 904aef01e49572aa821fa5630222385ea3e4facc..1d50f9f19e9e9f6b10d2ede9a3410fd313534678 100644
 --- a/defaults/herdr.d.ts
 +++ b/defaults/herdr.d.ts
 @@ -17,7 +17,7 @@ export function hc(args: string[]): Promise<ExecResult>;
@@ -331,7 +331,7 @@ index c9db3736db76f4bf63605130a39308df5db8d9ce..cab54dc75a77467856fc313628e42a97
  
  /**
 diff --git a/docs/commands.md b/docs/commands.md
-index 54f46d1bee7ed64f10597f2b27ba090cbcc7c10f..c0f2be04a2f1363c73844ab8f7b1bf986bc2dcad 100644
+index e692cf61ba1629c2fa52dfcfb1b0fd8142710bde..00870d094ff4585fafe24795c292827e357c9c00 100644
 --- a/docs/commands.md
 +++ b/docs/commands.md
 @@ -2,14 +2,14 @@
@@ -556,7 +556,7 @@ index deb49f1a1096ac8d960efb2d9d5712b9b040291e..5150e087d710f2863306549ebd263e95
    const ref = { help: await run(binary, "--help"), commands: JSON.parse(await run(binary, "commands")) as Command[] };
    const pages = { "docs/commands.md": commandPage(ref.commands) };
 diff --git a/src/SKILL.md b/src/SKILL.md
-index 6bfb18684c34a8bc7002b665aefd19c22dc4fbee..df2b9e76670140bd453372618b1b1bf7c638f25f 100644
+index 5845dfcababab086f777466c32ae15d0ad4337a4..275414e8e5ba08dbb673c39c2ef22e33afea9d3b 100644
 --- a/src/SKILL.md
 +++ b/src/SKILL.md
 @@ -1,7 +1,7 @@
@@ -588,7 +588,7 @@ index 6bfb18684c34a8bc7002b665aefd19c22dc4fbee..df2b9e76670140bd453372618b1b1bf7
  signal or restart the person's app or core. A window closing does not kill
  its terminals.
  
-@@ -28,16 +28,16 @@ default names. Use IDs from `ls` rather than guessing or acting on the wrong
+@@ -31,16 +31,16 @@ default names. Use IDs from `ls` rather than guessing or acting on the wrong
  focused pane.
  
  ```sh
@@ -610,7 +610,7 @@ index 6bfb18684c34a8bc7002b665aefd19c22dc4fbee..df2b9e76670140bd453372618b1b1bf7
  ```
  
  The folder is on that machine; tabs and splits in the space stay there.
-@@ -49,7 +49,7 @@ object. Unknown argument names fail and list valid names; they never target the
+@@ -55,7 +55,7 @@ object. Unknown argument names fail and list valid names; they never target the
  current space or pane instead. Use `commands` to confirm the command's exact shape:
  
  ```sh
@@ -619,7 +619,7 @@ index 6bfb18684c34a8bc7002b665aefd19c22dc4fbee..df2b9e76670140bd453372618b1b1bf7
  ```
  
  It prints the created IDs (for example `{ "pane": "...", "terminal": "..." }`)
-@@ -69,17 +69,17 @@ the screen.
+@@ -75,17 +75,17 @@ the screen.
  
  ## Customize layouts, keys, or mods
  
@@ -640,7 +640,7 @@ index 6bfb18684c34a8bc7002b665aefd19c22dc4fbee..df2b9e76670140bd453372618b1b1bf7
  - Save to reload. A broken save keeps the old version running and reports
    an error in `status`; a still-working screen is not proof the edit worked.
  - Make only the requested change. Don't touch unrelated mods or settings.
-@@ -94,9 +94,9 @@ those files or the generated guide. The app rewrites them on start.
+@@ -100,9 +100,9 @@ those files or the generated guide. The app rewrites them on start.
  After every mod change:
  
  ```sh
@@ -653,7 +653,7 @@ index 6bfb18684c34a8bc7002b665aefd19c22dc4fbee..df2b9e76670140bd453372618b1b1bf7
  ```
  
  `check` loads the mod and renders it once. It exits nonzero with the exact
-@@ -104,7 +104,7 @@ error. Never call a mod done without a passing check. Then confirm it is
+@@ -110,7 +110,7 @@ error. Never call a mod done without a passing check. Then confirm it is
  shown correctly in the running window with `shot`; don't claim a visual
  check you haven't made.
  
@@ -662,7 +662,7 @@ index 6bfb18684c34a8bc7002b665aefd19c22dc4fbee..df2b9e76670140bd453372618b1b1bf7
  absolute path (default: `herdr-shot.png` in your current folder). It is the
  app's own rendering at full pixel size: terminals, images, overlays and
  floats included, even when the window is covered or minimized. No screen
-@@ -113,7 +113,7 @@ capture or permissions. It needs a running window that has drawn a frame;
+@@ -119,7 +119,7 @@ capture or permissions. It needs a running window that has drawn a frame;
  
  ## Problems and safety
  
@@ -922,10 +922,10 @@ index 67631922e50c591084c6bf176daf35b79fc03667..a10658bd6fdb67e6365f25ae8375d289
      };
      let icon = Arc::new(Image::from_bytes(ImageFormat::Png, ICON.to_vec()));
 diff --git a/src/window.rs b/src/window.rs
-index 3dbe2d2a8f7c6785c694064cc2647ca905ae3028..f1fdf62e7f5f843beaa5900197a023d42fd35ec0 100644
+index c5d8569f2ac98e68582fb5f5d122f311bfdc1c73..baa11431f87b7d983d33d4d01eb5814e018a4f73 100644
 --- a/src/window.rs
 +++ b/src/window.rs
-@@ -1487,7 +1487,7 @@ impl AppWindow {
+@@ -1495,7 +1495,7 @@ impl AppWindow {
      fn load(&self, inst: Instance, window: &mut Window, cx: &mut Context<Self>) -> Copy {
          let mut copy = Copy { inst, id: 0, root: None, _watch: None, error: None };
          let (Some(runtime), Some(folder)) = (&self.runtime, self.folders.get(&copy.inst.name)) else {

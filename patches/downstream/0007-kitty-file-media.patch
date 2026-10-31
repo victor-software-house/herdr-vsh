@@ -10,10 +10,10 @@ Drop-When: Upstream herdr-app enables the libghostty-vt kitty file, temporary fi
  1 file changed, 24 insertions(+)
 
 diff --git a/src/vt.rs b/src/vt.rs
-index 54001278e046d263240ccbbbe72ae8dec2342fc5..5c6b407fcf25da6ac0d7dd32aa24d267c48bb849 100644
+index ef57059358e56f0315a610d5f362eade4268c6b8..3aa41eaaea59df311eda7971403c2baa5e5df140 100644
 --- a/src/vt.rs
 +++ b/src/vt.rs
-@@ -366,6 +366,14 @@ impl Vt {
+@@ -426,6 +426,14 @@ impl Vt {
              // No read callback: programs can never read the local clipboard.
              let images: u64 = 128 << 20;
              ghostty_terminal_set(term, GHOSTTY_TERMINAL_OPT_KITTY_IMAGE_STORAGE_LIMIT, &images as *const _ as *const c_void);
@@ -28,8 +28,8 @@ index 54001278e046d263240ccbbbe72ae8dec2342fc5..5c6b407fcf25da6ac0d7dd32aa24d267
  
              ghostty_render_state_update(state, term);
              let mut colors = GhosttyRenderStateColors { size: std::mem::size_of::<GhosttyRenderStateColors>(), ..Default::default() };
-@@ -1391,6 +1399,22 @@ mod tests {
-         assert!(reply.contains("i=7") && reply.contains("OK"), "{reply:?}");
+@@ -1704,6 +1712,22 @@ mod tests {
+         assert_eq!((p[0].width, p[0].height, p[0].offset), (16, 16, [0, 4]));
      }
  
 +    #[test]
