@@ -41,7 +41,7 @@ export function pickFolder(options?: { prompt?: string }): Promise<string | null
 export function playSound(sound: string): null;
 
 /**
- * Runs a command, the same ones keys.json binds (`herdr-app commands` lists them all with their
+ * Runs a command, the same ones keys.json binds (`herdr-vsh commands` lists them all with their
  * arguments). Structural commands fail while their machine's layout is unavailable.
  * Mod props are stored as given, never machine-qualified. Most commands apply right after
  * the call returns; terminal.keep/park finish in the background and toast on failure.
@@ -230,7 +230,7 @@ export function layout(): unknown;
 /** The names of every layout in layouts/ (main first). */
 export function layouts(): string[];
 
-/** Every command the app runs: its name, arguments and what it does (as `herdr-app commands`).
+/** Every command the app runs: its name, arguments and what it does (as `herdr-vsh commands`).
  *  Mods' own `<mod>.<command>`s aren't listed. */
 export function commands(): { name: string; args: { name: string; required: boolean }[]; about: string }[];
 

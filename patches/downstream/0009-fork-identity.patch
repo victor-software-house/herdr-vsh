@@ -11,7 +11,7 @@ Drop-When: The fork stops shipping as a separate app beside Herdr.
  THIRD-PARTY-NOTICES            |    2 +-
  defaults/AGENTS.md             |   50 ++++++++++++++++++++-------------------
  defaults/frame/welcome/main.js |    2 +-
- defaults/herdr.d.ts            |    4 ++-
+ defaults/herdr.d.ts            |    8 +++---
  docs/commands.md               |   10 ++++----
  docs/mods.md                   |    4 ++-
  docs/security.md               |    2 +-
@@ -26,10 +26,10 @@ Drop-When: The fork stops shipping as a separate app beside Herdr.
  src/main.rs                    |   44 ++++++++++++++++++++---------------
  src/mods.rs                    |    8 +++++-
  src/setup.rs                   |    2 +-
- src/window.rs                  |    2 +-
+ src/window.rs                  |    4 ++-
  tests/commands.rs              |    2 +-
  tests/skill.rs                 |    4 ++-
- 23 files changed, 243 insertions(+), 125 deletions(-)
+ 23 files changed, 246 insertions(+), 128 deletions(-)
  create mode 100644 docs/vsh/banner-dark.svg
  create mode 100644 docs/vsh/banner.svg
  create mode 100644 docs/vsh/brand.md
@@ -309,7 +309,7 @@ index 7304a28df59256b868d88af0c5089f3e45eb88ff..d094880a3715966814b1334a5948797b
  const APPEARANCES = [
    [null, "System"],
 diff --git a/defaults/herdr.d.ts b/defaults/herdr.d.ts
-index 904aef01e49572aa821fa5630222385ea3e4facc..1d50f9f19e9e9f6b10d2ede9a3410fd313534678 100644
+index 904aef01e49572aa821fa5630222385ea3e4facc..0d64bccad09670076a80b3780e52812198e6f40c 100644
 --- a/defaults/herdr.d.ts
 +++ b/defaults/herdr.d.ts
 @@ -17,7 +17,7 @@ export function hc(args: string[]): Promise<ExecResult>;
@@ -321,7 +321,7 @@ index 904aef01e49572aa821fa5630222385ea3e4facc..1d50f9f19e9e9f6b10d2ede9a3410fd3
  export function appHome(): string;
  
  /** Reads UTF-8 text (up to 1 MiB), or null if absent. Runs off the UI thread.
-@@ -37,7 +37,7 @@ export function knownAgents(options?: { on?: string | null }): Promise<(Program
+@@ -37,11 +37,11 @@ export function knownAgents(options?: { on?: string | null }): Promise<(Program
  export function pickFolder(options?: { prompt?: string }): Promise<string | null>;
  
  /** Plays "done" or "blocked" (the attention sounds, or the files settings.json names), or an MP3
@@ -330,6 +330,20 @@ index 904aef01e49572aa821fa5630222385ea3e4facc..1d50f9f19e9e9f6b10d2ede9a3410fd3
  export function playSound(sound: string): null;
  
  /**
+- * Runs a command, the same ones keys.json binds (`herdr-app commands` lists them all with their
++ * Runs a command, the same ones keys.json binds (`herdr-vsh commands` lists them all with their
+  * arguments). Structural commands fail while their machine's layout is unavailable.
+  * Mod props are stored as given, never machine-qualified. Most commands apply right after
+  * the call returns; terminal.keep/park finish in the background and toast on failure.
+@@ -230,7 +230,7 @@ export function layout(): unknown;
+ /** The names of every layout in layouts/ (main first). */
+ export function layouts(): string[];
+ 
+-/** Every command the app runs: its name, arguments and what it does (as `herdr-app commands`).
++/** Every command the app runs: its name, arguments and what it does (as `herdr-vsh commands`).
+  *  Mods' own `<mod>.<command>`s aren't listed. */
+ export function commands(): { name: string; args: { name: string; required: boolean }[]; about: string }[];
+ 
 diff --git a/docs/commands.md b/docs/commands.md
 index e692cf61ba1629c2fa52dfcfb1b0fd8142710bde..00870d094ff4585fafe24795c292827e357c9c00 100644
 --- a/docs/commands.md
@@ -922,7 +936,7 @@ index 67631922e50c591084c6bf176daf35b79fc03667..a10658bd6fdb67e6365f25ae8375d289
      };
      let icon = Arc::new(Image::from_bytes(ImageFormat::Png, ICON.to_vec()));
 diff --git a/src/window.rs b/src/window.rs
-index c5d8569f2ac98e68582fb5f5d122f311bfdc1c73..baa11431f87b7d983d33d4d01eb5814e018a4f73 100644
+index c5d8569f2ac98e68582fb5f5d122f311bfdc1c73..6935e3ed018203ce850e4a6f9b21ff17e4d5658c 100644
 --- a/src/window.rs
 +++ b/src/window.rs
 @@ -1495,7 +1495,7 @@ impl AppWindow {
@@ -934,6 +948,15 @@ index c5d8569f2ac98e68582fb5f5d122f311bfdc1c73..baa11431f87b7d983d33d4d01eb5814e
              return copy;
          };
          copy.id = mods::prepare_load(&copy.inst);
+@@ -2583,7 +2583,7 @@ impl AppWindow {
+                 return json!({ "ok": true });
+             }
+             tracing::warn!("unknown command {name:?}");
+-            return json!({ "error": format!("unknown command {name:?}: see `herdr-app commands`; a mod's are <mod>.<command> and need the mod loaded") });
++            return json!({ "error": format!("unknown command {name:?}: see `herdr-vsh commands`; a mod's are <mod>.<command> and need the mod loaded") });
+         };
+         if let Err(error) = crate::commands::validate_args(command, &args) {
+             return json!({ "error": error });
 diff --git a/tests/commands.rs b/tests/commands.rs
 index 4f516eb72ec4bc1efbfb990e9ad26362ced3fe99..618446058bff4e30449e6d0d55ba43a7d6e0df68 100644
 --- a/tests/commands.rs

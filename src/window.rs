@@ -2583,7 +2583,7 @@ impl AppWindow {
                 return json!({ "ok": true });
             }
             tracing::warn!("unknown command {name:?}");
-            return json!({ "error": format!("unknown command {name:?}: see `herdr-app commands`; a mod's are <mod>.<command> and need the mod loaded") });
+            return json!({ "error": format!("unknown command {name:?}: see `herdr-vsh commands`; a mod's are <mod>.<command> and need the mod loaded") });
         };
         if let Err(error) = crate::commands::validate_args(command, &args) {
             return json!({ "error": error });

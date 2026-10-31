@@ -428,15 +428,6 @@ impl Vt {
             // No read callback: programs can never read the local clipboard.
             let images: u64 = 128 << 20;
             ghostty_terminal_set(term, GHOSTTY_TERMINAL_OPT_KITTY_IMAGE_STORAGE_LIMIT, &images as *const _ as *const c_void);
-            // Images may also come by path or shared memory, as in Ghostty: Claude Code sends previews by path.
-            let media = true;
-            ghostty_terminal_set(term, GHOSTTY_TERMINAL_OPT_KITTY_IMAGE_MEDIUM_FILE, &media as *const _ as *const c_void);
-            ghostty_terminal_set(term, GHOSTTY_TERMINAL_OPT_KITTY_IMAGE_MEDIUM_SHARED_MEM, &media as *const _ as *const c_void);
-            let tmp = std::env::temp_dir();
-            let tmp = tmp.to_string_lossy();
-            let tmp = GhosttyString { ptr: tmp.as_ptr(), len: tmp.len() };
-            ghostty_terminal_set(term, GHOSTTY_TERMINAL_OPT_KITTY_IMAGE_MEDIUM_TEMP_FILE, &tmp as *const _ as *const c_void);
-
             ghostty_render_state_update(state, term);
             let mut colors = GhosttyRenderStateColors { size: std::mem::size_of::<GhosttyRenderStateColors>(), ..Default::default() };
             ghostty_render_state_get(state, GHOSTTY_RENDER_STATE_DATA_COLORS, &mut colors as *mut _ as *mut c_void);
@@ -591,6 +582,24 @@ impl Vt {
         out.sort_by_key(|p| (!p.below_text, p.z));
         *self.placements_cache.borrow_mut() = Some(out.clone());
         out
+    }
+
+    /// Kitty images by path, temporary file or shared memory, as Ghostty takes
+    /// them (Claude Code sends previews by path), for a program on this machine
+    /// only: a program elsewhere names its own machine's files, so it sends pixels.
+    pub fn allow_local_image_media(&mut self, on: bool) {
+        unsafe {
+            ghostty_terminal_set(self.term, GHOSTTY_TERMINAL_OPT_KITTY_IMAGE_MEDIUM_FILE, &on as *const _ as *const c_void);
+            ghostty_terminal_set(self.term, GHOSTTY_TERMINAL_OPT_KITTY_IMAGE_MEDIUM_SHARED_MEM, &on as *const _ as *const c_void);
+            if on {
+                let tmp = std::env::temp_dir();
+                let tmp = tmp.to_string_lossy();
+                let tmp = GhosttyString { ptr: tmp.as_ptr(), len: tmp.len() };
+                ghostty_terminal_set(self.term, GHOSTTY_TERMINAL_OPT_KITTY_IMAGE_MEDIUM_TEMP_FILE, &tmp as *const _ as *const c_void);
+            } else {
+                ghostty_terminal_set(self.term, GHOSTTY_TERMINAL_OPT_KITTY_IMAGE_MEDIUM_TEMP_FILE, std::ptr::null());
+            }
+        }
     }
 
     /// A stored image's generation, which changes whenever its pixels do; None once it's deleted.
@@ -1734,15 +1743,20 @@ mod tests {
         use base64::Engine;
         let path = std::env::temp_dir().join(format!("herdr-kitty-file-{}.rgb", std::process::id()));
         std::fs::write(&path, [255u8, 0, 0]).unwrap();
-        let mut vt = Vt::new(20, 5);
-        vt.resize(20, 5, 8, 16);
         let name = base64::engine::general_purpose::STANDARD.encode(path.to_string_lossy().as_bytes());
-        vt.write(format!("\x1b_Ga=T,t=f,f=24,s=1,v=1,i=9,q=2;{name}\x1b\\").as_bytes());
-        vt.frame();
-        let p = vt.placements();
+        let send = |local: bool| {
+            let mut vt = Vt::new(20, 5);
+            vt.resize(20, 5, 8, 16);
+            vt.allow_local_image_media(local);
+            vt.write(format!("\x1b_Ga=T,t=f,f=24,s=1,v=1,i=9,q=2;{name}\x1b\\").as_bytes());
+            vt.frame();
+            let p = vt.placements();
+            (p.len(), p.first().and_then(|p| vt.image_bgra(9, p.source)).map(|i| i.2))
+        };
+        let (local, remote) = (send(true), send(false));
         std::fs::remove_file(&path).unwrap();
-        assert_eq!(p.len(), 1, "{p:?}");
-        assert_eq!(vt.image_bgra(9, p[0].source).unwrap().2[..], [0, 0, 255, 255]);
+        assert_eq!(local, (1, Some(vec![0, 0, 255, 255])));
+        assert_eq!(remote, (0, None), "a program on another machine sends pixels");
     }
 
     #[test]

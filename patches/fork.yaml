@@ -98,14 +98,16 @@ patches:
   - name: kitty-file-media
     kind: source
     purpose: >-
-      Accept kitty images sent by file path, temporary file or shared memory, as
-      Ghostty does, so Claude Code image previews draw.
+      Accept kitty images sent by path, temporary file or shared memory, as Ghostty
+      does, from programs on this machine (Claude Code sends previews by path); programs
+      on other machines send pixels.
     upstream_status: not-submitted
     drop_when: >-
       Upstream herdr-app enables the libghostty-vt kitty file, temporary file and
       shared memory media.
     scope:
       - src/vt.rs
+      - src/terminal.rs
   - name: kitty-image-release
     kind: source
     purpose: >-
