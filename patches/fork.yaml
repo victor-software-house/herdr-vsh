@@ -159,6 +159,15 @@ patches:
       another core.
     scope:
       - src/core_bin.rs
+  - name: terminal-find
+    kind: source
+    purpose: "Find in a terminal and its scrollback with cmd+f (ctrl+shift+f elsewhere), through libghostty search: upstream PR #195 by dgurinovich, carried until it merges."
+    upstream_status: submitted
+    drop_when: "herdrdev/herdr-app merges PR #195 or ships its own terminal find."
+    scope:
+      - src/**
+      - defaults/**
+      - docs/commands.md
   - name: fork-ci
     kind: tooling
     purpose: "Run only the fork's own CI: the upstream test workflow on pushes to downstream and pull requests, on standard GitHub-hosted runners, with no release publishing."

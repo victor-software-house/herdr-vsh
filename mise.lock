@@ -41,10 +41,30 @@ url = "https://github.com/evilmartians/lefthook/releases/download/v2.2.2/lefthoo
 url_api = "https://api.github.com/repos/evilmartians/lefthook/releases/assets/636518817"
 provenance = "github-attestations"
 
+[[tools.mr-boxington]]
+version = "1.29.0"
+backend = "packslip:github.com/jdx/mr-boxington"
+specifiers = ["1.29.0"]
+
+[tools.mr-boxington."platforms.linux-x64"]
+checksum = "sha256:b713e1a3b8e7a8696b7e365ef222a5b4bb45b18ad6c30b6f86972194294c31ae"
+url = "https://github.com/jdx/mr-boxington/releases/download/v1.29.0/mbx-x86_64-unknown-linux-gnu.tar.gz"
+signer = "sigstore-oidc:https://github.com/jdx/mr-boxington/.github/workflows/release.yml"
+repository_ids = { repository = "1340721957" }
+
+[tools.mr-boxington."platforms.macos-arm64"]
+checksum = "sha256:5675b2a3b16059757933448b8fd70579716f356cae311766becd9da38c983ab5"
+url = "https://github.com/jdx/mr-boxington/releases/download/v1.29.0/mbx-aarch64-apple-darwin.tar.gz"
+signer = "sigstore-oidc:https://github.com/jdx/mr-boxington/.github/workflows/release.yml"
+repository_ids = { repository = "1340721957" }
+
 [[tools.rust]]
 version = "1.95.0"
 backend = "core:rust"
 specifiers = ["1.95.0"]
+
+[tools.rust.options]
+profile = "minimal"
 
 [[tools.rust]]
 version = "1.99.0"
@@ -53,3 +73,16 @@ specifiers = ["1.99.0"]
 
 [tools.rust.options]
 profile = "minimal"
+
+[[tools.zig]]
+version = "0.17.0"
+backend = "core:zig"
+specifiers = ["0.17.0"]
+
+[tools.zig."platforms.linux-x64"]
+checksum = "sha256:1cbe9df9f27e6b78d14ccbca43b6703a404ef79ef1c463de901d7f088d4e2026"
+url = "https://ziglang.org/download/0.17.0/zig-x86_64-linux-0.17.0.tar.xz"
+
+[tools.zig."platforms.macos-arm64"]
+checksum = "sha256:b607e9b9234790a008116ae5bdb71c6243b84b9fb42a53a9e70fde41c06c536a"
+url = "https://ziglang.org/download/0.17.0/zig-aarch64-macos-0.17.0.tar.xz"

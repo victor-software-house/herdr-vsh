@@ -16,9 +16,10 @@ Base: `refs/tags/v0.1.11` (`e12fd31866f33cb613922d0b33ea506e6f23ce3c`)
 | 8 | `kitty-image-release` | source | Free the GPU texture of a kitty image the terminal no longer shows, so images scrolling past do not grow memory without bound. | not-submitted | Upstream herdr-app releases kitty image textures from the GPUI atlas when it drops them from its cache. |
 | 9 | `fork-identity` | source | Run beside Herdr without sharing anything: the fork has its own home, window app id and herdr-core session by default. | not-submitted | The fork stops shipping as a separate app beside Herdr. |
 | 10 | `core-path-order` | source | Keep the person's PATH order when the core is already the first one found, so wrappers and shims ahead of the core's folder (such as a claude launcher in front of ~/.local/bin) still run in Herdr terminals. | not-submitted | Upstream stops moving the core's folder ahead of PATH entries that do not hold another core. |
-| 11 | `fork-ci` | tooling | Run only the fork's own CI: the upstream test workflow on pushes to downstream and pull requests, on standard GitHub-hosted runners, with no release publishing. | inappropriate: downstream-only CI policy | The fork is retired. |
-| 12 | `fork-release` | tooling | Publish Herdr VSH as a signed, notarized macOS installer package on GitHub Releases from a vsh-v* tag, without upstream updates, telemetry or feedback. | not-submitted | Herdr VSH stops shipping its own builds, or the rebranded app takes over releases. |
-| 13 | `fork-tooling` | tooling | Own fork policy, generated evidence, and integration configuration. | inappropriate: downstream-only fork maintenance | The downstream fork is retired. |
+| 11 | `terminal-find` | source | Find in a terminal and its scrollback with cmd+f (ctrl+shift+f elsewhere), through libghostty search: upstream PR #195 by dgurinovich, carried until it merges. | submitted | herdrdev/herdr-app merges PR #195 or ships its own terminal find. |
+| 12 | `fork-ci` | tooling | Run only the fork's own CI: the upstream test workflow on pushes to downstream and pull requests, on standard GitHub-hosted runners, with no release publishing. | inappropriate: downstream-only CI policy | The fork is retired. |
+| 13 | `fork-release` | tooling | Publish Herdr VSH as a signed, notarized macOS installer package on GitHub Releases from a vsh-v* tag, without upstream updates, telemetry or feedback. | not-submitted | Herdr VSH stops shipping its own builds, or the rebranded app takes over releases. |
+| 14 | `fork-tooling` | tooling | Own fork policy, generated evidence, and integration configuration. | inappropriate: downstream-only fork maintenance | The downstream fork is retired. |
 
 ## Disabled
 
