@@ -10,7 +10,7 @@ FORK_MANIFEST = "patches/fork.yaml"
 [tools]
 # mbx (mr-boxington) wraps Cargo inside mise: one shared, deduplicated build
 # store and compiler pool for every checkout, instead of a full target/ each.
-rust = { version = "1.95.0", profile = "minimal", mr_boxington = true }
+rust = { version = "1.99.1", profile = "minimal", mr_boxington = true }
 mr-boxington = "1.29.0"
 # The vendored Ghostty builds with Zig 0.17 (ci.yml ZIG_VERSION).
 zig = "0.17.0"

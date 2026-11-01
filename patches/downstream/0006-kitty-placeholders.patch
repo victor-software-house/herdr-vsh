@@ -11,9 +11,9 @@ Drop-When: Upstream herdr-app draws images from a Ghostty render state that reso
  crates/ghostty-sys/build.rs |    2 
  licenses/inventory.json     |    6 -
  src/terminal.rs             |   21 +-
- src/vt.rs                   |  513 ++++++++++++-------------------------------
+ src/vt.rs                   |  514 ++++++++++++-------------------------------
  vendor/ghostty              |    2 
- 7 files changed, 165 insertions(+), 397 deletions(-)
+ 7 files changed, 165 insertions(+), 398 deletions(-)
 
 diff --git a/README.md b/README.md
 index 6af61fd8931db4ff07d0dd05e2b176359f332977..2571cbcbd9998fd4c76b00bb1f1d2828b5927cec 100644
@@ -164,10 +164,18 @@ index e075e39f36cd8a9ddcbb9d0c28bedd9aa8e9fdd2..ed50e839941a950ebb2922ed7e50bceb
          }
      };
 diff --git a/src/vt.rs b/src/vt.rs
-index 817bad1a9c33919405d07cb7ba54b04a2580b8a3..ef57059358e56f0315a610d5f362eade4268c6b8 100644
+index 817bad1a9c33919405d07cb7ba54b04a2580b8a3..61a09bf97f9be413542964f7eff2d2826021927d 100644
 --- a/src/vt.rs
 +++ b/src/vt.rs
-@@ -133,227 +133,14 @@ pub struct Placement {
+@@ -6,7 +6,6 @@ use std::cell::RefCell;
+ use std::collections::HashMap;
+ use std::ffi::c_void;
+ use std::rc::Rc;
+-use std::sync::OnceLock;
+ use std::time::{Duration, Instant};
+ 
+ #[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
+@@ -133,227 +132,14 @@ pub struct Placement {
      pub generation: u64,
      pub col: i32,
      pub row: i32,
@@ -399,7 +407,7 @@ index 817bad1a9c33919405d07cb7ba54b04a2580b8a3..ef57059358e56f0315a610d5f362eade
  }
  
  unsafe extern "C" fn on_write_pty(_t: GhosttyTerminal, userdata: *mut c_void, data: *const u8, len: usize) {
-@@ -459,6 +246,8 @@ pub struct Vt {
+@@ -459,6 +245,8 @@ pub struct Vt {
      last_mouse_report: Vec<u8>,
      pub cols: u16,
      pub rows: u16,
@@ -408,7 +416,7 @@ index 817bad1a9c33919405d07cb7ba54b04a2580b8a3..ef57059358e56f0315a610d5f362eade
      theme: Theme,
      /// The built-in 256-color palette, which the theme's 16 colors override.
      base_palette: [GhosttyColorRgb; 256],
-@@ -669,6 +458,7 @@ impl Vt {
+@@ -669,6 +457,7 @@ impl Vt {
                  mouse_event,
                  cols,
                  rows,
@@ -416,7 +424,7 @@ index 817bad1a9c33919405d07cb7ba54b04a2580b8a3..ef57059358e56f0315a610d5f362eade
                  theme: theme(),
                  base_palette: colors.palette,
                  gesture,
-@@ -718,138 +508,78 @@ impl Vt {
+@@ -718,138 +507,78 @@ impl Vt {
          std::mem::take(&mut self.shared.replies)
      }
  
@@ -610,7 +618,7 @@ index 817bad1a9c33919405d07cb7ba54b04a2580b8a3..ef57059358e56f0315a610d5f362eade
      /// An image's pixels as BGRA (what GPUI uploads), cropped to `source`.
      pub fn image_bgra(&self, id: u32, source: [u32; 4]) -> Option<(u32, u32, Vec<u8>)> {
          unsafe {
-@@ -1177,6 +907,7 @@ impl Vt {
+@@ -1177,6 +906,7 @@ impl Vt {
          self.placements_cache.get_mut().take();
          self.cols = cols;
          self.rows = rows;
@@ -618,7 +626,7 @@ index 817bad1a9c33919405d07cb7ba54b04a2580b8a3..ef57059358e56f0315a610d5f362eade
          unsafe { ghostty_terminal_resize(self.term, cols, rows, cell_w.max(1), cell_h.max(1)) };
      }
  
-@@ -1285,6 +1016,8 @@ impl Vt {
+@@ -1285,6 +1015,8 @@ impl Vt {
  
      /// Updates the render state (respecting synchronized output) and reads one frame.
      pub fn frame(&mut self) -> Frame {
@@ -627,7 +635,7 @@ index 817bad1a9c33919405d07cb7ba54b04a2580b8a3..ef57059358e56f0315a610d5f362eade
          unsafe {
              if let Some(since) = self.shared.held_since
                  && since.elapsed() > MAX_HOLD
-@@ -1411,6 +1144,8 @@ impl Vt {
+@@ -1411,6 +1143,8 @@ impl Vt {
                  }
              }
  
@@ -636,7 +644,7 @@ index 817bad1a9c33919405d07cb7ba54b04a2580b8a3..ef57059358e56f0315a610d5f362eade
              if text.starts_with('\u{10eeee}') {
                  text.clear();
                  style.underline = 0;
-@@ -1798,10 +1533,11 @@ mod tests {
+@@ -1798,10 +1532,11 @@ mod tests {
          vt.resize(20, 5, 8, 16);
          // A 1x1 red PNG, transmitted and displayed, asking for a reply.
          vt.write(b"\x1b_Ga=T,f=100,i=7,q=0;iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4z8DwHwAFAAH/iZk9HQAAAABJRU5ErkJggg==\x1b\\");
@@ -649,7 +657,7 @@ index 817bad1a9c33919405d07cb7ba54b04a2580b8a3..ef57059358e56f0315a610d5f362eade
          let (w, h, bgra) = vt.image_bgra(7, p[0].source).unwrap();
          assert_eq!((w, h), (1, 1));
          assert_eq!(&bgra[..], &[0, 0, 255, 255]);
-@@ -1809,6 +1545,12 @@ mod tests {
+@@ -1809,6 +1544,12 @@ mod tests {
          assert!(reply.contains("i=7") && reply.contains("OK"), "{reply:?}");
      }
  
@@ -662,7 +670,7 @@ index 817bad1a9c33919405d07cb7ba54b04a2580b8a3..ef57059358e56f0315a610d5f362eade
      fn virtual_image(vt: &mut Vt, id: u32, placement: u32) {
          use base64::Engine;
          let pixels = base64::engine::general_purpose::STANDARD.encode([255u8, 0, 0].repeat(32));
-@@ -1834,19 +1576,17 @@ mod tests {
+@@ -1834,19 +1575,17 @@ mod tests {
          }
          let frame = vt.frame();
          assert!(frame.rows.iter().flat_map(|r| r.iter()).all(|c| c.text.is_empty()));
@@ -691,7 +699,7 @@ index 817bad1a9c33919405d07cb7ba54b04a2580b8a3..ef57059358e56f0315a610d5f362eade
      }
  
      #[test]
-@@ -1856,7 +1596,7 @@ mod tests {
+@@ -1856,7 +1595,7 @@ mod tests {
          virtual_image(&mut vt, 7, 0);
          vt.write(b"\x1b[38;5;7m");
          vt.write(format!("{}\u{10eeee}  {}", placeholder(2, 3, None), placeholder(2, 7, None)).as_bytes());
@@ -700,7 +708,7 @@ index 817bad1a9c33919405d07cb7ba54b04a2580b8a3..ef57059358e56f0315a610d5f362eade
          assert_eq!(p.len(), 2, "{p:?}");
          assert_eq!((p[0].col, p[0].width, p[0].source), (0, 16, [3, 2, 2, 1]));
          assert_eq!((p[1].col, p[1].width, p[1].source), (4, 8, [7, 2, 1, 1]));
-@@ -1877,7 +1617,7 @@ mod tests {
+@@ -1877,7 +1616,7 @@ mod tests {
          vt.write(b"\x1b[59;38;2;0;1;7m");
          vt.write(placeholder(3, 4, None).as_bytes());
          vt.frame();
@@ -709,7 +717,7 @@ index 817bad1a9c33919405d07cb7ba54b04a2580b8a3..ef57059358e56f0315a610d5f362eade
          assert_eq!(p.len(), 2, "{p:?}");
          assert_eq!((p[0].image, p[0].source), (0x01020304, [2, 1, 1, 1]));
          assert_eq!((p[1].image, p[1].source), (263, [4, 3, 1, 1]));
-@@ -1890,7 +1630,7 @@ mod tests {
+@@ -1890,7 +1629,7 @@ mod tests {
          let frame = vt.frame();
          let c = &frame.rows[0][0];
          assert!(c.text.is_empty() && !c.underline && !c.strike);
@@ -718,7 +726,7 @@ index 817bad1a9c33919405d07cb7ba54b04a2580b8a3..ef57059358e56f0315a610d5f362eade
      }
  
      #[test]
-@@ -1900,22 +1640,22 @@ mod tests {
+@@ -1900,22 +1639,22 @@ mod tests {
          virtual_image(&mut vt, 7, 0);
          vt.write(b"\x1b[38;5;7m");
          vt.write(placeholder(0, 0, None).as_bytes());
@@ -749,7 +757,7 @@ index 817bad1a9c33919405d07cb7ba54b04a2580b8a3..ef57059358e56f0315a610d5f362eade
      }
  
      #[test]
-@@ -1929,12 +1669,11 @@ mod tests {
+@@ -1929,12 +1668,11 @@ mod tests {
              }
              vt.write(b"\r\n");
          }
@@ -767,7 +775,7 @@ index 817bad1a9c33919405d07cb7ba54b04a2580b8a3..ef57059358e56f0315a610d5f362eade
      }
  
      #[test]
-@@ -1945,19 +1684,12 @@ mod tests {
+@@ -1945,19 +1683,12 @@ mod tests {
          vt.write(b"\x1b_Ga=p,U=1,i=7,p=1,c=8,r=4,z=10,q=2\x1b\\\x1b[38;5;7m");
          vt.write(placeholder(0, 0, None).as_bytes());
          vt.write(b"\x1b[H\x1b_Ga=T,f=24,i=8,s=1,v=1,z=1,q=2;/wAA\x1b\\");
@@ -788,7 +796,7 @@ index 817bad1a9c33919405d07cb7ba54b04a2580b8a3..ef57059358e56f0315a610d5f362eade
      #[test]
      fn kitty_placeholders_center_images_without_stretching() {
          let mut vt = Vt::new(20, 6);
-@@ -1966,12 +1698,53 @@ mod tests {
+@@ -1966,12 +1697,53 @@ mod tests {
          vt.write(b"\x1b[38;5;7m");
          vt.write(placeholder(1, 0, None).as_bytes());
          vt.write(placeholder(1, 1, None).as_bytes());

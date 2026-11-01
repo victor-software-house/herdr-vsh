@@ -21,7 +21,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  RUST_TOOLCHAIN: 1.95.0
+  RUST_TOOLCHAIN: 1.99.1
   # In the cache key: ghostty-sys can't tell when Zig changes.
   # 0.17: the vendored Ghostty (kitty-placeholders) needs it.
   ZIG_VERSION: 0.17.0

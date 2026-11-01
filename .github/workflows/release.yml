@@ -21,7 +21,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  RUST_TOOLCHAIN: 1.95.0
+  RUST_TOOLCHAIN: 1.99.1
 
 jobs:
   macos:

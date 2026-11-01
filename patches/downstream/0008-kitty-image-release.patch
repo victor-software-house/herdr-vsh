@@ -172,10 +172,10 @@ index 202e6bf637b8b72804420dc96634272ac0b6c0bd..e8232670567800e13d5e58418b877060
          let mut g = grid.borrow_mut();
          (g.painted, g.painted_with) = (painted, with);
 diff --git a/src/vt.rs b/src/vt.rs
-index 21cc2bf68dbb008be7d2bf8ed81ab16d9212dd17..23e0770a05bbe46d3ee8c3462326ed48fea86a9f 100644
+index e203fec454796b44b7fad68cd164e5e81e1e2fbe..eaccce93e3010b98ea0cb1a109d86e4e39fa009b 100644
 --- a/src/vt.rs
 +++ b/src/vt.rs
-@@ -141,6 +141,8 @@ pub struct Placement {
+@@ -140,6 +140,8 @@ pub struct Placement {
      pub z: i32,
      /// Drawn under the text, not over it.
      pub below_text: bool,
@@ -184,7 +184,7 @@ index 21cc2bf68dbb008be7d2bf8ed81ab16d9212dd17..23e0770a05bbe46d3ee8c3462326ed48
  }
  
  unsafe extern "C" fn on_write_pty(_t: GhosttyTerminal, userdata: *mut c_void, data: *const u8, len: usize) {
-@@ -544,8 +546,11 @@ impl Vt {
+@@ -543,8 +545,11 @@ impl Vt {
                      get(GHOSTTY_RENDER_STATE_IMAGE_DATA_SOURCE_Y, &mut source[1] as *mut _ as *mut c_void);
                      get(GHOSTTY_RENDER_STATE_IMAGE_DATA_SOURCE_WIDTH, &mut source[2] as *mut _ as *mut c_void);
                      get(GHOSTTY_RENDER_STATE_IMAGE_DATA_SOURCE_HEIGHT, &mut source[3] as *mut _ as *mut c_void);
@@ -197,7 +197,7 @@ index 21cc2bf68dbb008be7d2bf8ed81ab16d9212dd17..23e0770a05bbe46d3ee8c3462326ed48
                  }
              }
              ghostty_render_state_image_iterator_free(it);
-@@ -597,6 +602,18 @@ impl Vt {
+@@ -596,6 +601,18 @@ impl Vt {
          }
      }
  
@@ -216,7 +216,7 @@ index 21cc2bf68dbb008be7d2bf8ed81ab16d9212dd17..23e0770a05bbe46d3ee8c3462326ed48
      /// An image's pixels as BGRA (what GPUI uploads), cropped to `source`.
      pub fn image_bgra(&self, id: u32, source: [u32; 4]) -> Option<(u32, u32, Vec<u8>)> {
          unsafe {
-@@ -1742,6 +1759,18 @@ mod tests {
+@@ -1741,6 +1758,18 @@ mod tests {
          assert_eq!(remote, (0, None), "a program on another machine sends pixels");
      }
  

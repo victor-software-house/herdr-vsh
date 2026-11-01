@@ -24,10 +24,10 @@ index ed50e839941a950ebb2922ed7e50bceb76856b2c..202e6bf637b8b72804420dc96634272a
              g.vt_cell = cell;
              g.told_display = None;
 diff --git a/src/vt.rs b/src/vt.rs
-index ef57059358e56f0315a610d5f362eade4268c6b8..21cc2bf68dbb008be7d2bf8ed81ab16d9212dd17 100644
+index 61a09bf97f9be413542964f7eff2d2826021927d..e203fec454796b44b7fad68cd164e5e81e1e2fbe 100644
 --- a/src/vt.rs
 +++ b/src/vt.rs
-@@ -426,7 +426,6 @@ impl Vt {
+@@ -425,7 +425,6 @@ impl Vt {
              // No read callback: programs can never read the local clipboard.
              let images: u64 = 128 << 20;
              ghostty_terminal_set(term, GHOSTTY_TERMINAL_OPT_KITTY_IMAGE_STORAGE_LIMIT, &images as *const _ as *const c_void);
@@ -35,7 +35,7 @@ index ef57059358e56f0315a610d5f362eade4268c6b8..21cc2bf68dbb008be7d2bf8ed81ab16d
              ghostty_render_state_update(state, term);
              let mut colors = GhosttyRenderStateColors { size: std::mem::size_of::<GhosttyRenderStateColors>(), ..Default::default() };
              ghostty_render_state_get(state, GHOSTTY_RENDER_STATE_DATA_COLORS, &mut colors as *mut _ as *mut c_void);
-@@ -580,6 +579,24 @@ impl Vt {
+@@ -579,6 +578,24 @@ impl Vt {
          out
      }
  
@@ -60,7 +60,7 @@ index ef57059358e56f0315a610d5f362eade4268c6b8..21cc2bf68dbb008be7d2bf8ed81ab16d
      /// An image's pixels as BGRA (what GPUI uploads), cropped to `source`.
      pub fn image_bgra(&self, id: u32, source: [u32; 4]) -> Option<(u32, u32, Vec<u8>)> {
          unsafe {
-@@ -1704,6 +1721,27 @@ mod tests {
+@@ -1703,6 +1720,27 @@ mod tests {
          assert_eq!((p[0].width, p[0].height, p[0].offset), (16, 16, [0, 4]));
      }
  
