@@ -6,14 +6,14 @@ Downstream-Reason: Fit the macOS 26 titlebar: hide the background macOS 26 and l
 Upstream-Status: not-submitted
 Drop-When: GPUI or Herdr hides the macOS 26 titlebar background and sizes the window-button gap for macOS 26 itself.
 ---
- defaults/mods/agents/main.js           |    4 ++--
- defaults/mods/tabs/main.js             |    2 +-
- defaults/mods/terminals-bar/main.js    |    8 +++++---
- defaults/mods/workspace-chrome/main.js |    6 +++---
- src/mods/render_tests.rs               |    6 +++---
- src/window.rs                          |    5 +++--
- vendor/gpui-pre-macos/src/window.rs    |   28 ++++++++++++++++++++++++++++
- 7 files changed, 45 insertions(+), 14 deletions(-)
+ defaults/mods/agents/main.js           |    4 +-
+ defaults/mods/tabs/main.js             |    2 +
+ defaults/mods/terminals-bar/main.js    |    8 +++-
+ defaults/mods/workspace-chrome/main.js |    6 ++-
+ src/mods/render_tests.rs               |    6 ++-
+ src/window.rs                          |    5 ++-
+ vendor/gpui-pre-macos/src/window.rs    |   63 ++++++++++++++++++++++++++++++--
+ 7 files changed, 76 insertions(+), 18 deletions(-)
 
 diff --git a/defaults/mods/agents/main.js b/defaults/mods/agents/main.js
 index 4ec2d54cdc9a7b4013cc4308745c3d813adedac9..8485a15d11c2ed94195e053fe88e2cc35ea0d53d 100644
@@ -141,10 +141,20 @@ index dcd4d8976a2a6ba25617ecc309bdf7d254519e07..c5d8569f2ac98e68582fb5f5d122f311
  fn traffic_light_divider_inset(n: &Node, axis: Axis, index: usize, macos: bool, zoom: f32) -> f32 {
      if !macos || axis != Axis::Row || n.titlebar != Some(crate::layout::Titlebar::Layout) {
 diff --git a/vendor/gpui-pre-macos/src/window.rs b/vendor/gpui-pre-macos/src/window.rs
-index 1ba661cf773822aca98bb5a591b11be7e7dc4993..bdc5216099af2aa6cece6a94244722940edb5135 100644
+index 1ba661cf773822aca98bb5a591b11be7e7dc4993..e3f97bb2bd52de0355917c1eb334cdc134565c49 100644
 --- a/vendor/gpui-pre-macos/src/window.rs
 +++ b/vendor/gpui-pre-macos/src/window.rs
-@@ -719,7 +719,35 @@ struct MacWindowState {
+@@ -687,6 +687,9 @@ struct MacWindowState {
+     input_handler: Option<PlatformInputHandler>,
+     last_key_equivalent: Option<KeyDownEvent>,
+     last_left_mouse_down_event: Option<Retained<Objc2Object>>,
++    // HERDR: a window move in progress (`start_window_move`): where the pointer and
++    // the window's origin were when it began, in screen coordinates.
++    window_move: Option<(NSPoint, NSPoint)>,
+     synthetic_drag_counter: usize,
+     traffic_light_position: Option<Point<Pixels>>,
+     traffic_light_frames: Option<TrafficLightFrames>,
+@@ -719,7 +722,35 @@ struct MacWindowState {
  }
  
  impl MacWindowState {
@@ -180,3 +190,57 @@ index 1ba661cf773822aca98bb5a591b11be7e7dc4993..bdc5216099af2aa6cece6a9424472294
          if let Some(traffic_light_position) = self.traffic_light_position {
              if self.is_fullscreen() && !self.is_exiting_fullscreen {
                  self.restore_traffic_light();
+@@ -1128,6 +1159,7 @@ impl MacWindow {
+                 input_handler: None,
+                 last_key_equivalent: None,
+                 last_left_mouse_down_event: None,
++                window_move: None,
+                 synthetic_drag_counter: 0,
+                 traffic_light_position: titlebar
+                     .as_ref()
+@@ -2236,11 +2268,18 @@ impl PlatformWindow for MacWindow {
+             return;
+         }
+         let window = this.native_window;
+-
++        drop(this);
++        // HERDR: from the macOS 26 SDK on, AppKit begins a window drag only while it
++        // handles the mouse-down itself. `performWindowDragWithEvent:` from a later
++        // mouse-dragged event (the app decides it is a drag past a threshold), even
++        // with the original mouse-down, logs "Window move completed without beginning"
++        // and the window stays put. So the window follows the pointer itself: the
++        // mouse-dragged events that follow move it (`handle_view_event`), until the
++        // mouse-up.
+         unsafe {
+-            let app = NSApplication::sharedApplication(nil);
+-            let event: id = msg_send![app, currentEvent];
+-            let _: () = msg_send![window, performWindowDragWithEvent: event];
++            let pointer: NSPoint = msg_send![class!(NSEvent), mouseLocation];
++            let frame: NSRect = msg_send![window, frame];
++            self.0.lock().window_move = Some((pointer, frame.origin));
+         }
+     }
+ 
+@@ -2810,6 +2849,22 @@ extern "C" fn handle_view_event(this: &Object, _: Sel, native_event: id) {
+         }
+         NSEventType::NSLeftMouseUp => {
+             lock.last_left_mouse_down_event = None;
++            lock.window_move = None;
++        }
++        NSEventType::NSLeftMouseDragged => {
++            // HERDR: a window move in progress follows the pointer (`start_window_move`).
++            // The lock is released first: moving the window calls back into
++            // `window_did_move`.
++            if let Some((pointer, origin)) = lock.window_move {
++                let window = lock.native_window;
++                drop(lock);
++                unsafe {
++                    let now: NSPoint = msg_send![class!(NSEvent), mouseLocation];
++                    let to = NSPoint::new(origin.x + now.x - pointer.x, origin.y + now.y - pointer.y);
++                    let _: () = msg_send![window, setFrameOrigin: to];
++                }
++                lock = window_state.as_ref().lock();
++            }
+         }
+         _ => {}
+     }

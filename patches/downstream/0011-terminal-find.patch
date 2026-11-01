@@ -246,7 +246,7 @@ index 3569ff70cc252b783006dc12b8fac9c3036f7a9b..a444fd4d607137caa952b7f1b9aaaa33
      fn dates_are_utc_calendar_days() {
          assert_eq!(date(0), "1970-01-01");
 diff --git a/src/terminal.rs b/src/terminal.rs
-index 3bb8e3ec0832ed0758d10a1460595c55ccbe09a8..97f495160ec125f187cd78b67ffc0a29bcf49661 100644
+index e8232670567800e13d5e58418b877060ddbb8aa5..2987b4538c2eb6319551d9c4c0a08f2a57868ea9 100644
 --- a/src/terminal.rs
 +++ b/src/terminal.rs
 @@ -12,6 +12,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
@@ -474,7 +474,7 @@ index 3bb8e3ec0832ed0758d10a1460595c55ccbe09a8..97f495160ec125f187cd78b67ffc0a29
      let placements = g.vt.placements();
      let dev = device_cell(cell, scale);
      // Each placement: under the text or not, the part shown, and where the whole image would sit.
-@@ -1362,7 +1523,16 @@ impl EntityInputHandler for TerminalView {
+@@ -1369,7 +1530,16 @@ impl EntityInputHandler for TerminalView {
  impl Render for TerminalView {
      fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
          crate::bench::count(&crate::bench::TERMINAL);
@@ -492,7 +492,7 @@ index 3bb8e3ec0832ed0758d10a1460595c55ccbe09a8..97f495160ec125f187cd78b67ffc0a29
          if focused != self.was_focused {
              self.was_focused = focused;
              let g = self.grid.borrow();
-@@ -1381,6 +1551,7 @@ impl Render for TerminalView {
+@@ -1388,6 +1558,7 @@ impl Render for TerminalView {
          let selection_view = cx.entity().downgrade();
          let (input_focus, input_view) = (self.focus.clone(), cx.entity());
          let ended = self.ended.clone().or_else(|| self.lost.then(|| "reconnecting to core…".to_owned()));
@@ -500,7 +500,7 @@ index 3bb8e3ec0832ed0758d10a1460595c55ccbe09a8..97f495160ec125f187cd78b67ffc0a29
  
          div()
              .id(SharedString::from(format!("term-{}", self.address)))
-@@ -1390,7 +1561,25 @@ impl Render for TerminalView {
+@@ -1397,7 +1568,25 @@ impl Render for TerminalView {
              .relative()
              // Below 1, the layout's background shows through (cells a program colors stay solid).
              .bg(hsla(vt::theme().bg).opacity(crate::settings::get().terminal_opacity))
@@ -527,7 +527,7 @@ index 3bb8e3ec0832ed0758d10a1460595c55ccbe09a8..97f495160ec125f187cd78b67ffc0a29
                  // `send:<text>` bindings from keys.json type into this terminal.
                  match a.id().strip_prefix("send:") {
                      Some(text) => this.send(text.as_bytes()),
-@@ -1509,13 +1698,14 @@ impl Render for TerminalView {
+@@ -1516,13 +1705,14 @@ impl Render for TerminalView {
                          });
                          // While focused, the OS input methods (Pinyin, Japanese,
                          // dead keys) type into this terminal.

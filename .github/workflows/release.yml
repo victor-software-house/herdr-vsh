@@ -1,5 +1,6 @@
-# Herdr VSH's release: push a tag `vsh-v<version>-<n>` on downstream. macOS 26 on
-# Apple Silicon only for now: scripts/vsh-package-macos builds Herdr-VSH.pkg,
+# Herdr VSH's release: push a tag `vsh-v<version>-<n>` on downstream. macOS 26 or
+# newer on Apple Silicon only for now, built with Xcode 27 (the `xcode-27` runner
+# image, macOS 27): scripts/vsh-package-macos builds Herdr-VSH.pkg,
 # signed and notarized, and it goes to the tag's GitHub Release under that
 # fixed name, so releases/latest/download/Herdr-VSH.pkg always serves the newest.
 # The name stays Release: the 1Password connection that releases the signing
@@ -24,7 +25,7 @@ env:
 
 jobs:
   macos:
-    runs-on: macos-26
+    runs-on: xcode-27
     # Open to vsh-v* tags only.
     environment: release
     permissions:

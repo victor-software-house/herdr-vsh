@@ -1313,6 +1313,13 @@ fn paint_grid(bounds: Bounds<Pixels>, grid: &Rc<RefCell<Grid>>, focused: bool, w
                 pos - point(px(sx as f32 * kx), px(sy as f32 * ky)),
                 size(px(whole.width.0 as f32 * kx), px(whole.height.0 as f32 * ky)),
             );
+            // A placed image can start above the first row (scrolled, or replayed
+            // partly scrolled off): only the part inside the terminal is drawn, and
+            // `whole` still maps the texture onto that part.
+            let shown = shown.intersect(&bounds);
+            if shown.size.width <= px(0.0) || shown.size.height <= px(0.0) {
+                continue;
+            }
             images.push((p.below_text, shown, whole, img.clone()));
         }
     }

@@ -6,12 +6,12 @@ Downstream-Reason: Free the GPU texture of a kitty image the terminal no longer 
 Upstream-Status: not-submitted
 Drop-When: Upstream herdr-app releases kitty image textures from the GPUI atlas when it drops them from its cache.
 ---
- src/terminal.rs |   89 ++++++++++++++++++++++++++++++++++++++-----------------
- src/vt.rs       |   31 +++++++++++++++++++
- 2 files changed, 91 insertions(+), 29 deletions(-)
+ src/terminal.rs |   96 +++++++++++++++++++++++++++++++++++++++----------------
+ src/vt.rs       |   31 +++++++++++++++++-
+ 2 files changed, 98 insertions(+), 29 deletions(-)
 
 diff --git a/src/terminal.rs b/src/terminal.rs
-index 202e6bf637b8b72804420dc96634272ac0b6c0bd..3bb8e3ec0832ed0758d10a1460595c55ccbe09a8 100644
+index 202e6bf637b8b72804420dc96634272ac0b6c0bd..e8232670567800e13d5e58418b877060ddbb8aa5 100644
 --- a/src/terminal.rs
 +++ b/src/terminal.rs
 @@ -57,8 +57,8 @@ struct Grid {
@@ -25,7 +25,7 @@ index 202e6bf637b8b72804420dc96634272ac0b6c0bd..3bb8e3ec0832ed0758d10a1460595c55
      /// Where the pointer is over the pane.
      hover: Option<Point<Pixels>>,
      /// The link under the pointer to underline: (row, first column, last column).
-@@ -1121,27 +1121,56 @@ fn paint_grid(bounds: Bounds<Pixels>, grid: &Rc<RefCell<Grid>>, focused: bool, w
+@@ -1121,27 +1121,63 @@ fn paint_grid(bounds: Bounds<Pixels>, grid: &Rc<RefCell<Grid>>, focused: bool, w
      g.origin = origin;
      let frame = g.vt.frame();
      let placements = g.vt.placements();
@@ -67,6 +67,13 @@ index 202e6bf637b8b72804420dc96634272ac0b6c0bd..3bb8e3ec0832ed0758d10a1460595c55
 +                pos - point(px(sx as f32 * kx), px(sy as f32 * ky)),
 +                size(px(whole.width.0 as f32 * kx), px(whole.height.0 as f32 * ky)),
 +            );
++            // A placed image can start above the first row (scrolled, or replayed
++            // partly scrolled off): only the part inside the terminal is drawn, and
++            // `whole` still maps the texture onto that part.
++            let shown = shown.intersect(&bounds);
++            if shown.size.width <= px(0.0) || shown.size.height <= px(0.0) {
++                continue;
++            }
 +            images.push((p.below_text, shown, whole, img.clone()));
          }
      }
@@ -90,7 +97,7 @@ index 202e6bf637b8b72804420dc96634272ac0b6c0bd..3bb8e3ec0832ed0758d10a1460595c55
  
      window.paint_quad(fill(bounds, hsla(frame.bg).opacity(crate::settings::get().terminal_opacity)));
      let at = |x: usize, y: usize| origin + point(cell.width * x as f32, cell.height * y as f32);
-@@ -1152,16 +1181,13 @@ fn paint_grid(bounds: Bounds<Pixels>, grid: &Rc<RefCell<Grid>>, focused: bool, w
+@@ -1152,16 +1188,13 @@ fn paint_grid(bounds: Bounds<Pixels>, grid: &Rc<RefCell<Grid>>, focused: bool, w
          Bounds::new(point(x0, y0), size(x1 - x0, y1 - y0))
      };
      let paint_images = |below: bool, window: &mut Window| {
@@ -109,7 +116,7 @@ index 202e6bf637b8b72804420dc96634272ac0b6c0bd..3bb8e3ec0832ed0758d10a1460595c55
      // Each row's drawing is built once and painted again while the row is the
      // same (`Vt::frame` keeps a row libghostty didn't change): an agent's spinner
      // line rebuilds one row, not the whole screen.
-@@ -1173,12 +1199,9 @@ fn paint_grid(bounds: Bounds<Pixels>, grid: &Rc<RefCell<Grid>>, focused: bool, w
+@@ -1173,12 +1206,9 @@ fn paint_grid(bounds: Bounds<Pixels>, grid: &Rc<RefCell<Grid>>, focused: bool, w
          painted.clear();
      }
      painted.truncate(frame.rows.len());
@@ -125,7 +132,7 @@ index 202e6bf637b8b72804420dc96634272ac0b6c0bd..3bb8e3ec0832ed0758d10a1460595c55
              if painted.get(y).is_none_or(|(r, _)| !Rc::ptr_eq(r, row)) {
                  let ops = row_ops(row, cell, window);
                  if y < painted.len() {
-@@ -1187,14 +1210,23 @@ fn paint_grid(bounds: Bounds<Pixels>, grid: &Rc<RefCell<Grid>>, focused: bool, w
+@@ -1187,14 +1217,23 @@ fn paint_grid(bounds: Bounds<Pixels>, grid: &Rc<RefCell<Grid>>, focused: bool, w
                      painted.push((row.clone(), ops));
                  }
              }
@@ -156,7 +163,7 @@ index 202e6bf637b8b72804420dc96634272ac0b6c0bd..3bb8e3ec0832ed0758d10a1460595c55
                  RowOp::Sprite { x, text, color } => crate::sprites::paint(text, Bounds::new(at(*x, y), cell), *color, window),
                  RowOp::Icon { x, offset, font, glyph, size, color } => {
                      let _ = window.paint_glyph(at(*x, y) + *offset, *font, *glyph, *size, *color);
-@@ -1205,6 +1237,7 @@ fn paint_grid(bounds: Bounds<Pixels>, grid: &Rc<RefCell<Grid>>, focused: bool, w
+@@ -1205,6 +1244,7 @@ fn paint_grid(bounds: Bounds<Pixels>, grid: &Rc<RefCell<Grid>>, focused: bool, w
              }
          }
      }
